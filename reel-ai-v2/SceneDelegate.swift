@@ -6,6 +6,8 @@
 //
 
 import UIKit
+import SwiftUI
+import Appwrite
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
@@ -16,7 +18,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Use this method to optionally configure and attach the UIWindow `window` to the provided UIWindowScene `scene`.
         // If using a storyboard, the `window` property will automatically be initialized and attached to the scene.
         // This delegate does not imply the connecting scene or session are new (see `application:configurationForConnectingSceneSession` instead).
-        guard let _ = (scene as? UIWindowScene) else { return }
+        guard let windowScene = (scene as? UIWindowScene) else { return }
+        
+        let window = UIWindow(windowScene: windowScene)
+        let authView = AuthenticationView()
+        let hostingController = UIHostingController(rootView: authView)
+        window.rootViewController = hostingController
+        self.window = window
+        window.makeKeyAndVisible()
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {
@@ -47,6 +56,23 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // to restore the scene back to its current state.
     }
 
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        guard let url = URLContexts.first?.url,
+              url.absoluteString.contains("appwrite-callback") else {
+            debugPrint("📱 Invalid callback URL received")
+            return
+        }
+        
+        debugPrint("📱 Handling OAuth callback: \(url)")
+        Task {
+            do {
+                let session = try await AppwriteService.shared.account.createOAuth2Session(provider: .github, success: url.absoluteString)
+                debugPrint("📱 OAuth session created successfully: \(session)")
+            } catch {
+                debugPrint("📱 Error handling OAuth callback: \(error)")
+            }
+        }
+    }
 
 }
 

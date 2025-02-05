@@ -1,0 +1,87 @@
+You are building an iOS application that is a social media app for the user to take and share videos and pictures with their friends.
+
+Every time you choose to apply a rule (or rules), explicitly state which rule you are applying in the output. You can abbreviate the rule description to a single word or phrase.
+
+# Important rules you MUST follow
+
+- Always add debug logs & comments in the code for easier debug and readablility
+
+# Project Structure
+
+├── appwrite.json
+├── buildServer.json
+├── instructions
+│   └── instructions.md
+├── reel-ai-v2
+│   ├── AppDelegate.swift
+│   ├── Assets.xcassets
+│   │   ├── AccentColor.colorset
+│   │   │   └── Contents.json
+│   │   ├── AppIcon.appiconset
+│   │   │   └── Contents.json
+│   │   └── Contents.json
+│   ├── Base.lproj
+│   │   ├── LaunchScreen.storyboard
+│   │   └── Main.storyboard
+│   ├── Config
+│   │   ├── AppConfig.swift
+│   │   └── AppConfig.template.swift
+│   ├── Core
+│   │   ├── Authentication
+│   │   │   ├── Models
+│   │   │   ├── ViewModels
+│   │   │   └── Views
+│   │   ├── Interactions
+│   │   │   ├── Models
+│   │   │   ├── ViewModels
+│   │   │   └── Views
+│   │   ├── Notifications
+│   │   │   ├── Models
+│   │   │   ├── ViewModels
+│   │   │   └── Views
+│   │   ├── Posts
+│   │   │   ├── Models
+│   │   │   ├── ViewModels
+│   │   │   └── Views
+│   │   ├── Profile
+│   │   │   ├── Models
+│   │   │   ├── ViewModels
+│   │   │   └── Views
+│   │   └── Timeline
+│   │       ├── Models
+│   │       ├── ViewModels
+│   │       └── Views
+│   ├── Info.plist
+│   ├── SceneDelegate.swift
+│   ├── Services
+│   │   └── AppwriteService.swift
+│   └── ViewController.swift
+├── reel-ai-v2.xcodeproj
+│   ├── project.pbxproj
+│   ├── project.xcworkspace
+│   │   ├── contents.xcworkspacedata
+│   │   ├── xcshareddata
+│   │   │   └── swiftpm
+│   │   │       ├── Package.resolved
+│   │   │       └── configuration
+│   │   └── xcuserdata
+│   │       └── abrahamobubo.xcuserdatad
+│   │           └── UserInterfaceState.xcuserstate
+│   └── xcuserdata
+│       └── abrahamobubo.xcuserdatad
+│           └── xcschemes
+│               └── xcschememanagement.plist
+├── reel-ai-v2Tests
+│   └── reel_ai_v2Tests.swift
+└── reel-ai-v2UITests
+    ├── reel_ai_v2UITests.swift
+    └── reel_ai_v2UITestsLaunchTests.swift
+
+# Tech Stack
+
+- Swift
+- SwiftUI
+- Objective-C
+
+
+#
