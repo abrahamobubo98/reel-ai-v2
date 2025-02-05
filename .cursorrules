@@ -1,87 +1,50 @@
-You are building an iOS application that is a social media app for the user to take and share videos and pictures with their friends.
-
-Every time you choose to apply a rule (or rules), explicitly state which rule you are applying in the output. You can abbreviate the rule description to a single word or phrase.
-
-# Important rules you MUST follow
-
-- Always add debug logs & comments in the code for easier debug and readablility
-
-# Project Structure
-
-├── appwrite.json
-├── buildServer.json
-├── instructions
-│   └── instructions.md
-├── reel-ai-v2
-│   ├── AppDelegate.swift
-│   ├── Assets.xcassets
-│   │   ├── AccentColor.colorset
-│   │   │   └── Contents.json
-│   │   ├── AppIcon.appiconset
-│   │   │   └── Contents.json
-│   │   └── Contents.json
-│   ├── Base.lproj
-│   │   ├── LaunchScreen.storyboard
-│   │   └── Main.storyboard
-│   ├── Config
-│   │   ├── AppConfig.swift
-│   │   └── AppConfig.template.swift
-│   ├── Core
-│   │   ├── Authentication
-│   │   │   ├── Models
-│   │   │   ├── ViewModels
-│   │   │   └── Views
-│   │   ├── Interactions
-│   │   │   ├── Models
-│   │   │   ├── ViewModels
-│   │   │   └── Views
-│   │   ├── Notifications
-│   │   │   ├── Models
-│   │   │   ├── ViewModels
-│   │   │   └── Views
-│   │   ├── Posts
-│   │   │   ├── Models
-│   │   │   ├── ViewModels
-│   │   │   └── Views
-│   │   ├── Profile
-│   │   │   ├── Models
-│   │   │   ├── ViewModels
-│   │   │   └── Views
-│   │   └── Timeline
-│   │       ├── Models
-│   │       ├── ViewModels
-│   │       └── Views
-│   ├── Info.plist
-│   ├── SceneDelegate.swift
-│   ├── Services
-│   │   └── AppwriteService.swift
-│   └── ViewController.swift
-├── reel-ai-v2.xcodeproj
-│   ├── project.pbxproj
-│   ├── project.xcworkspace
-│   │   ├── contents.xcworkspacedata
-│   │   ├── xcshareddata
-│   │   │   └── swiftpm
-│   │   │       ├── Package.resolved
-│   │   │       └── configuration
-│   │   └── xcuserdata
-│   │       └── abrahamobubo.xcuserdatad
-│   │           └── UserInterfaceState.xcuserstate
-│   └── xcuserdata
-│       └── abrahamobubo.xcuserdatad
-│           └── xcschemes
-│               └── xcschememanagement.plist
-├── reel-ai-v2Tests
-│   └── reel_ai_v2Tests.swift
-└── reel-ai-v2UITests
-    ├── reel_ai_v2UITests.swift
-    └── reel_ai_v2UITestsLaunchTests.swift
-
-# Tech Stack
-
-- Swift
-- SwiftUI
-- Objective-C
-
-
-#
+"run similar": {
+  "pattern": "^run\\s+similar$",
+  "action": "analyze",
+  "template": {
+    "sections": [
+      {
+        "title": "Similar Files",
+        "analysis": "Identify other files with related functionality and summarize effective solutions",
+        "format": [
+          "File: ${filename}",
+          "- Role: ${role}",
+          "- Key Patterns: ${designPatterns}",
+          "- Error Handling: ${errorHandling}"
+        ]
+      },
+      {
+        "title": "Good Patterns vs. Anti-Patterns",
+        "analysis": "Highlight which patterns should be adopted or avoided",
+        "format": [
+          "### Recommended Good Patterns",
+          "- ${recommendedPattern}: ${explanation}",
+          "### Anti-Patterns to Avoid",
+          "- ${antipattern}: ${reason}"
+        ]
+      },
+      {
+        "title": "Proposed Uniformity Enforcement",
+        "analysis": "Outline how to apply these patterns to the current error code",
+        "format": [
+          "### Implementation Steps",
+          "1. ${step}",
+          "2. ${step}",
+          "### Impact / Risks",
+          "- ${impact}"
+        ]
+      },
+      {
+        "title": "Sanity Check",
+        "analysis": "Re-check findings for consistency or overlooked details",
+        "format": [
+          "### Double-Check Findings",
+          "Check #1: ${description}",
+          "Check #2: ${description}",
+          "- Correction Needed: ${yes_or_no}",
+          "- Explanation: ${details}"
+        ]
+      }
+    ]
+  }
+}

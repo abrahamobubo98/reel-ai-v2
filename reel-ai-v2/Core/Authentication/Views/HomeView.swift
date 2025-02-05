@@ -28,11 +28,7 @@ struct HomeView: View {
             }
             
             // Create Tab
-            VStack(spacing: 20) {
-                Text("Create")
-                    .font(.largeTitle)
-                    .bold()
-            }
+            CreateView()
             .tabItem {
                 Image(systemName: "plus.square.fill")
                 Text("Create")
