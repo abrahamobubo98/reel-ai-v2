@@ -232,6 +232,7 @@ struct CreateView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.presentationMode) private var presentationMode
     @StateObject private var videoPlayer = VideoPlayerManager()
+    @State private var showMediaPicker = false
     
     var body: some View {
         VStack(spacing: 20) {
@@ -345,7 +346,7 @@ struct CreateView: View {
                     }
                     
                     Button(action: {
-                        viewModel.handleMediaSelection()
+                        showMediaPicker = true
                     }) {
                         Label("Choose from Library", systemImage: "photo.fill")
                             .frame(maxWidth: .infinity)
@@ -376,6 +377,16 @@ struct CreateView: View {
                     viewModel.handleCapturedImage(image)
                 },
                 onVideoCaptured: { videoURL in
+                    viewModel.handleCapturedVideo(videoURL)
+                }
+            )
+        }
+        .sheet(isPresented: $showMediaPicker) {
+            MediaPickerView(
+                onImageSelected: { image in
+                    viewModel.handleCapturedImage(image)
+                },
+                onVideoSelected: { videoURL in
                     viewModel.handleCapturedVideo(videoURL)
                 }
             )

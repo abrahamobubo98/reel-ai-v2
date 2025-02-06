@@ -10,6 +10,7 @@ class CameraViewModel: NSObject, ObservableObject {
     @Published var error: String?
     @Published var capturedImage: UIImage?
     @Published var isSimulator = false
+    @Published var currentCameraPosition: AVCaptureDevice.Position = .back
     
     var onImageCaptured: ((UIImage) -> Void)?
     var onVideoCaptured: ((URL) -> Void)?
@@ -36,55 +37,83 @@ class CameraViewModel: NSObject, ObservableObject {
         
         guard isAuthorized else { return }
         
-        session.beginConfiguration()
-        defer { session.commitConfiguration() }
-        
-        // Reset any existing configuration
-        for input in session.inputs {
-            session.removeInput(input)
-        }
-        for output in session.outputs {
-            session.removeOutput(output)
+        // Stop the session before reconfiguring
+        if session.isRunning {
+            session.stopRunning()
         }
         
-        // Setup new configuration
-        camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
-        
-        do {
-            if let camera = camera {
-                input = try AVCaptureDeviceInput(device: camera)
-                if session.canAddInput(input!) {
-                    session.addInput(input!)
-                }
-                
-                // Add photo output
-                if session.canAddOutput(photoOutput) {
-                    session.addOutput(photoOutput)
-                }
-                
-                // Add video output
-                if session.canAddOutput(videoOutput) {
-                    session.addOutput(videoOutput)
-                }
-                
-                // Start session
-                if let connection = photoOutput.connection(with: .video),
-                   connection.isEnabled {
-                    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                        self?.session.startRunning()
+        // Use a dedicated queue for session configuration
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            
+            self.session.beginConfiguration()
+            
+            // Reset any existing configuration
+            for input in self.session.inputs {
+                self.session.removeInput(input)
+            }
+            for output in self.session.outputs {
+                self.session.removeOutput(output)
+            }
+            
+            // Setup new configuration
+            self.camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: self.currentCameraPosition)
+            
+            do {
+                if let camera = self.camera {
+                    self.input = try AVCaptureDeviceInput(device: camera)
+                    if self.session.canAddInput(self.input!) {
+                        self.session.addInput(self.input!)
+                    }
+                    
+                    // Add photo output
+                    if self.session.canAddOutput(self.photoOutput) {
+                        self.session.addOutput(self.photoOutput)
+                    }
+                    
+                    // Add video output
+                    if self.session.canAddOutput(self.videoOutput) {
+                        self.session.addOutput(self.videoOutput)
+                    }
+                    
+                    self.session.commitConfiguration()
+                    
+                    // Start session after configuration is committed
+                    if let connection = self.photoOutput.connection(with: .video),
+                       connection.isEnabled {
+                        self.session.startRunning()
+                    } else {
+                        DispatchQueue.main.async {
+                            self.error = "Video output is not available"
+                        }
+                        debugPrint("📱 Video output is not enabled")
                     }
                 } else {
-                    error = "Video output is not available"
-                    debugPrint("📱 Video output is not enabled")
+                    DispatchQueue.main.async {
+                        self.error = "Camera device not found"
+                    }
+                    debugPrint("📱 No camera device available")
                 }
-            } else {
-                error = "Camera device not found"
-                debugPrint("📱 No camera device available")
+            } catch {
+                DispatchQueue.main.async {
+                    self.error = "Failed to setup camera: \(error.localizedDescription)"
+                }
+                debugPrint("📱 Camera setup error: \(error)")
             }
-        } catch {
-            self.error = "Failed to setup camera: \(error.localizedDescription)"
-            debugPrint("📱 Camera setup error: \(error)")
         }
+    }
+    
+    func switchCamera() {
+        // Stop any ongoing recording
+        if isRecording {
+            stopRecording()
+        }
+        
+        // Toggle camera position
+        currentCameraPosition = currentCameraPosition == .back ? .front : .back
+        
+        // Reconfigure session with new camera
+        setupCamera()
     }
     
     func cleanup() {
@@ -172,11 +201,12 @@ class CameraViewModel: NSObject, ObservableObject {
         
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mov")
         videoOutput.startRecording(to: tempURL, recordingDelegate: self)
-        isRecording = true
         
-        // Start timer for recording duration
-        recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            DispatchQueue.main.async {
+        DispatchQueue.main.async {
+            self.isRecording = true
+            
+            // Start timer for recording duration
+            self.recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
                 self?.recordingDuration += 0.1
             }
         }
@@ -185,9 +215,13 @@ class CameraViewModel: NSObject, ObservableObject {
     func stopRecording() {
         guard isRecording else { return }
         videoOutput.stopRecording()
-        recordingTimer?.invalidate()
-        recordingTimer = nil
-        recordingDuration = 0
+        
+        DispatchQueue.main.async {
+            self.recordingTimer?.invalidate()
+            self.recordingTimer = nil
+            self.recordingDuration = 0
+            self.isRecording = false
+        }
     }
 }
 
@@ -251,8 +285,16 @@ struct CameraPreviewView: UIViewRepresentable {
 struct CameraView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel = CameraViewModel()
+    @State private var captureMode: CaptureMode = .photo
+    @State private var dragOffset: CGFloat = 0
+    
     var onImageCaptured: ((UIImage) -> Void)?
     var onVideoCaptured: ((URL) -> Void)?
+    
+    enum CaptureMode {
+        case photo
+        case video
+    }
     
     var body: some View {
         ZStack {
@@ -274,20 +316,71 @@ struct CameraView: View {
                 }
                 .padding()
             } else if viewModel.isAuthorized {
-                CameraPreviewView(session: viewModel.session)
-                    .ignoresSafeArea()
-                
-                VStack {
-                    HStack {
-                        Button(action: {
-                            dismiss()
-                        }) {
-                            Image(systemName: "xmark")
-                                .font(.title)
-                                .foregroundColor(.white)
-                                .padding()
+                ZStack {
+                    // Camera Preview
+                    CameraPreviewView(session: viewModel.session)
+                        .ignoresSafeArea()
+                    
+                    // Mode Indicator at top
+                    VStack {
+                        HStack {
+                            Button(action: {
+                                dismiss()
+                            }) {
+                                Image(systemName: "xmark")
+                                    .font(.title)
+                                    .foregroundColor(.white)
+                                    .padding()
+                            }
+                            
+                            Spacer()
+                            
+                            // Mode Pills - Now Tappable
+                            HStack(spacing: 0) {
+                                Button(action: {
+                                    withAnimation {
+                                        captureMode = .photo
+                                    }
+                                }) {
+                                    Text("Photo")
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(captureMode == .photo ? Color.white : Color.black.opacity(0.5))
+                                        .foregroundColor(captureMode == .photo ? .black : .white)
+                                }
+                                
+                                Button(action: {
+                                    withAnimation {
+                                        captureMode = .video
+                                    }
+                                }) {
+                                    Text("Video")
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(captureMode == .video ? Color.white : Color.black.opacity(0.5))
+                                        .foregroundColor(captureMode == .video ? .black : .white)
+                                }
+                            }
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color.white, lineWidth: 1)
+                            )
+                            .padding()
+                            
+                            Spacer()
+                            
+                            // Camera Switch Button
+                            Button(action: {
+                                viewModel.switchCamera()
+                            }) {
+                                Image(systemName: "camera.rotate.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.white)
+                                    .padding()
+                            }
+                            .disabled(viewModel.isRecording)
                         }
-                        Spacer()
                         
                         if viewModel.isRecording {
                             HStack(spacing: 4) {
@@ -300,33 +393,63 @@ struct CameraView: View {
                             }
                             .padding(.horizontal)
                         }
-                    }
-                    Spacer()
-                    
-                    // Camera button with gestures
-                    Button(action: {}) {
-                        Image(systemName: viewModel.isRecording ? "stop.circle.fill" : "camera.circle.fill")
-                            .font(.system(size: 72))
-                            .foregroundColor(.white)
-                    }
-                    .simultaneousGesture(
-                        LongPressGesture(minimumDuration: 0.5)
-                            .onEnded { _ in
-                                viewModel.startRecording()
-                            }
-                    )
-                    .simultaneousGesture(
-                        TapGesture()
-                            .onEnded {
+                        
+                        Spacer()
+                        
+                        // Capture Button with improved gestures
+                        ZStack {
+                            Circle()
+                                .strokeBorder(Color.white, lineWidth: 3)
+                                .frame(width: 80, height: 80)
+                            
+                            if captureMode == .video {
                                 if viewModel.isRecording {
-                                    viewModel.stopRecording()
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.red)
+                                        .frame(width: 30, height: 30)
                                 } else {
-                                    viewModel.capturePhoto()
+                                    Circle()
+                                        .fill(Color.red)
+                                        .frame(width: 60, height: 60)
                                 }
+                            } else {
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 70, height: 70)
                             }
-                    )
-                    .disabled(viewModel.isCapturing)
-                    .padding(.bottom, 30)
+                        }
+                        .gesture(
+                            DragGesture(minimumDistance: 20) // Increased minimum distance
+                                .onChanged { gesture in
+                                    dragOffset = gesture.translation.width
+                                    let threshold: CGFloat = 30 // Reduced threshold
+                                    withAnimation {
+                                        if dragOffset > threshold {
+                                            captureMode = .video
+                                        } else if dragOffset < -threshold {
+                                            captureMode = .photo
+                                        }
+                                    }
+                                }
+                                .onEnded { _ in
+                                    dragOffset = 0
+                                }
+                        )
+                        .highPriorityGesture(
+                            TapGesture()
+                                .onEnded {
+                                    if captureMode == .photo {
+                                        viewModel.capturePhoto()
+                                    } else if !viewModel.isRecording {
+                                        viewModel.startRecording()
+                                    } else {
+                                        viewModel.stopRecording()
+                                    }
+                                }
+                        )
+                        .disabled(viewModel.isCapturing)
+                        .padding(.bottom, 30)
+                    }
                 }
             } else {
                 VStack {
@@ -360,6 +483,9 @@ struct CameraView: View {
             }
         }
         .onDisappear {
+            if viewModel.isRecording {
+                viewModel.stopRecording()
+            }
             viewModel.cleanup()
         }
     }
