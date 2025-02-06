@@ -19,9 +19,25 @@ class AuthenticationViewModel: ObservableObject {
     @Published var errorMessage = ""
     @Published var isAuthenticated = false
     
+    init() {
+        #if DEBUG
+        prefillCredentials()
+        #endif
+    }
+    
+    private func prefillCredentials() {
+        email = "abrahamobubo@gmail.com"
+        password = "qwertyuiop"
+    }
+    
     func toggleAuthState() {
         model.authState = model.authState == .signIn ? .signUp : .signIn
         clearFields()
+        #if DEBUG
+        if model.authState == .signIn {
+            prefillCredentials()
+        }
+        #endif
     }
     
     private func clearFields() {

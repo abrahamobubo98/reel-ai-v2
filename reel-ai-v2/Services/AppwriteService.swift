@@ -6,23 +6,29 @@ import UIKit
 /// Custom errors for storage operations
 enum StorageError: LocalizedError {
     case invalidImage
+    case invalidVideo
     case compressionFailed
     case sizeTooLarge(size: Int)
     case uploadFailed(String)
     case invalidFormat
+    case videoProcessingFailed
     
     var errorDescription: String? {
         switch self {
         case .invalidImage:
             return "The provided image is invalid"
+        case .invalidVideo:
+            return "The provided video is invalid"
         case .compressionFailed:
-            return "Failed to compress the image"
+            return "Failed to compress the media"
         case .sizeTooLarge(let size):
-            return "Image size (\(size)MB) exceeds maximum allowed size (10MB)"
+            return "Media size (\(size)MB) exceeds maximum allowed size (100MB)"
         case .uploadFailed(let reason):
             return "Upload failed: \(reason)"
         case .invalidFormat:
-            return "Invalid image format. Only JPEG and PNG are supported"
+            return "Invalid format. Only JPEG, PNG, and MOV/MP4 are supported"
+        case .videoProcessingFailed:
+            return "Failed to process video file"
         }
     }
 }
@@ -49,17 +55,26 @@ enum DatabaseError: LocalizedError {
 struct Post: Codable {
     let id: String
     let userId: String
-    let imageId: String
+    let mediaId: String
+    let mediaType: MediaType
     let caption: String
+    let externalLink: String
     let createdAt: Date
     let likes: Int
     let comments: Int
     
-    init(id: String, userId: String, imageId: String, caption: String, createdAt: Date, likes: Int, comments: Int) {
+    enum MediaType: String, Codable {
+        case photo
+        case video
+    }
+    
+    init(id: String, userId: String, mediaId: String, mediaType: MediaType = .photo, caption: String, externalLink: String = "", createdAt: Date, likes: Int, comments: Int) {
         self.id = id
         self.userId = userId
-        self.imageId = imageId
+        self.mediaId = mediaId
+        self.mediaType = mediaType
         self.caption = caption
+        self.externalLink = externalLink
         self.createdAt = createdAt
         self.likes = likes
         self.comments = comments
@@ -68,8 +83,10 @@ struct Post: Codable {
     enum CodingKeys: String, CodingKey {
         case id = "$id"
         case userId
-        case imageId
+        case mediaId
+        case mediaType
         case caption
+        case externalLink
         case createdAt
         case likes
         case comments
@@ -79,8 +96,10 @@ struct Post: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         userId = try container.decode(String.self, forKey: .userId)
-        imageId = try container.decode(String.self, forKey: .imageId)
+        mediaId = try container.decode(String.self, forKey: .mediaId)
+        mediaType = try container.decode(MediaType.self, forKey: .mediaType)
         caption = try container.decode(String.self, forKey: .caption)
+        externalLink = try container.decode(String.self, forKey: .externalLink)
         likes = try container.decode(Int.self, forKey: .likes)
         comments = try container.decode(Int.self, forKey: .comments)
         
@@ -115,6 +134,7 @@ class AppwriteService {
         static let postMediaBucketId = "67a3d0f2002c24b13472"    // Bucket ID for post media
         static let apiKey = "standard_32a04112d6a86d68f3be5ad6d9da16ea60733860de5ee91d8f7a71ce08edae860c0c9d275d4d11f098d00b9e30b43accb846cdcac966a7b3325785b5c60932206ca460c7b8014430c9a010b4655fc2d245910267314a9a8a72fcfd7e2c9f1fa3e209995250ac0e4e1fa59f848c647cb2aeefa3907297f517eabfbdac67f9dc85"
         static let maxImageSizeMB = 10
+        static let maxVideoSizeMB = 100
         static let compressionQuality: CGFloat = 0.8
         static let maxRetryAttempts = 3
         static let databaseId = "67a3d388001df90d84c0"    // Database ID from Appwrite Console
@@ -157,37 +177,43 @@ class AppwriteService {
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             
-            let posts = documents.documents.compactMap { (document: Document) -> Post? in
+            var posts: [Post] = []
+            for document in documents.documents {
                 let data = document.data
                 debugPrint("📱 Parsing document: \(document.id)")
                 
                 // Extract values from AnyCodable
                 let userId = (data["userId"]?.value as? String) ?? ""
-                let imageId = (data["imageId"]?.value as? String) ?? ""
+                let mediaId = (data["mediaId"]?.value as? String) ?? ""
                 let caption = (data["caption"]?.value as? String) ?? ""
                 let dateString = (data["createdAt"]?.value as? String) ?? ""
                 let likes = (data["likes"]?.value as? Int) ?? 0
                 let comments = (data["comments"]?.value as? Int) ?? 0
+                let mediaTypeString = (data["mediaType"]?.value as? String) ?? "photo"
                 
-                guard !userId.isEmpty, !imageId.isEmpty, !dateString.isEmpty else {
+                guard !userId.isEmpty, !mediaId.isEmpty, !dateString.isEmpty else {
                     debugPrint("📱 Missing required fields in document: \(document.id)")
-                    return nil
+                    continue
                 }
                 
                 guard let date = formatter.date(from: dateString) else {
                     debugPrint("📱 Failed to parse date: \(dateString)")
-                    return nil
+                    continue
                 }
                 
-                return Post(
+                let post = Post(
                     id: document.id,
                     userId: userId,
-                    imageId: imageId,
+                    mediaId: mediaId,
+                    mediaType: Post.MediaType(rawValue: mediaTypeString) ?? .photo,
                     caption: caption,
+                    externalLink: "",
                     createdAt: date,
                     likes: likes,
                     comments: comments
                 )
+                
+                posts.append(post)
             }
             
             debugPrint("📱 Successfully parsed \(posts.count) posts")
@@ -203,7 +229,7 @@ class AppwriteService {
     }
     
     /// Creates a new post in the database
-    func createPost(imageId: String, caption: String) async throws -> Post {
+    func createPost(mediaId: String, caption: String, mediaType: Post.MediaType = .photo, externalLink: String = "") async throws -> Post {
         do {
             debugPrint("📱 Starting post creation process...")
             
@@ -218,15 +244,17 @@ class AppwriteService {
             debugPrint("📱 Created date string: \(dateString)")
             
             // Create post document
-            debugPrint("📱 Attempting to create document with imageId: \(imageId)")
+            debugPrint("📱 Attempting to create document with mediaId: \(mediaId)")
             let document = try await databases.createDocument(
                 databaseId: Constants.databaseId,
                 collectionId: Constants.postsCollectionId,
                 documentId: ID.unique(),
                 data: [
                     "userId": user.id,
-                    "imageId": imageId,
+                    "mediaId": mediaId,
+                    "mediaType": mediaType.rawValue,
                     "caption": caption,
+                    "externalLink": externalLink,
                     "createdAt": dateString,
                     "likes": 0,
                     "comments": 0
@@ -234,12 +262,14 @@ class AppwriteService {
             )
             debugPrint("📱 Document created successfully with ID: \(document.id)")
             
-            // Create Post object directly from document data
+            // Create Post object from document data
             let post = Post(
                 id: document.id,
                 userId: document.data["userId"]?.value as? String ?? user.id,
-                imageId: document.data["imageId"]?.value as? String ?? imageId,
+                mediaId: document.data["mediaId"]?.value as? String ?? mediaId,
+                mediaType: Post.MediaType(rawValue: document.data["mediaType"]?.value as? String ?? mediaType.rawValue) ?? mediaType,
                 caption: document.data["caption"]?.value as? String ?? caption,
+                externalLink: document.data["externalLink"]?.value as? String ?? externalLink,
                 createdAt: formatter.date(from: document.data["createdAt"]?.value as? String ?? dateString) ?? Date(),
                 likes: document.data["likes"]?.value as? Int ?? 0,
                 comments: document.data["comments"]?.value as? Int ?? 0
@@ -307,6 +337,29 @@ class AppwriteService {
         return try await uploadWithRetry(file: file, progress: progress)
     }
     
+    /// Uploads a video file with progress tracking and retry logic
+    func uploadVideo(
+        from videoURL: URL,
+        progress: ((Double) -> Void)? = nil
+    ) async throws -> String {
+        // Get video file size without loading entire file
+        let resourceValues = try videoURL.resourceValues(forKeys: [.fileSizeKey])
+        guard let fileSize = resourceValues.fileSize else {
+            throw StorageError.invalidVideo
+        }
+        
+        let videoSizeMB = Double(fileSize) / 1_000_000
+        guard videoSizeMB <= Double(Constants.maxVideoSizeMB) else {
+            throw StorageError.sizeTooLarge(size: Int(videoSizeMB))
+        }
+        
+        // Create file input using URL instead of loading data into memory
+        let file = InputFile.fromPath(videoURL.path)
+        
+        // Upload with retry
+        return try await uploadWithRetry(file: file, progress: progress)
+    }
+    
     /// Internal method to handle upload retries
     private func uploadWithRetry(
         file: InputFile,
@@ -349,10 +402,22 @@ class AppwriteService {
         }
     }
     
+    func getMediaUrl(mediaId: String, isVideo: Bool = false) -> String {
+        let baseUrl = "\(Constants.endpoint)/storage/buckets/\(Constants.postMediaBucketId)/files/\(mediaId)/view"
+        var url = "\(baseUrl)?project=\(Constants.projectId)"
+        
+        // Add additional parameters for video if needed
+        if isVideo {
+            url += "&output=video"
+        }
+        
+        return url
+    }
+    
+    // Keep the old method for backward compatibility but mark as deprecated
+    @available(*, deprecated, message: "Use getMediaUrl instead")
     func getImageUrl(fileId: String) -> String {
-        let baseUrl = "\(Constants.endpoint)/storage/buckets/\(Constants.postMediaBucketId)/files/\(fileId)/view"
-        // Add project information and preview parameters
-        return "\(baseUrl)?project=\(Constants.projectId)"
+        return getMediaUrl(mediaId: fileId)
     }
     
     // MARK: - Authentication Methods

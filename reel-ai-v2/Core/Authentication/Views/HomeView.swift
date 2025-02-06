@@ -1,4 +1,5 @@
 import SwiftUI
+import AVKit
 
 class HomeViewModel: ObservableObject {
     @Published var posts: [Post] = []
@@ -82,22 +83,27 @@ struct PostView: View {
             .padding(.horizontal)
             .padding(.top, 8)
             
-            // Image
-            AsyncImage(url: URL(string: appwrite.getImageUrl(fileId: post.imageId))) { phase in
-                switch phase {
-                case .empty:
-                    ProgressView()
-                        .frame(maxWidth: .infinity, minHeight: 300)
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFit()
-                case .failure:
-                    Image(systemName: "photo")
-                        .font(.largeTitle)
-                        .frame(maxWidth: .infinity, minHeight: 300)
-                @unknown default:
-                    EmptyView()
+            // Image or Video
+            if post.mediaType == .video {
+                VideoPlayer(player: AVPlayer(url: URL(string: appwrite.getMediaUrl(mediaId: post.mediaId, isVideo: true))!))
+                    .frame(maxWidth: .infinity, minHeight: 300)
+            } else {
+                AsyncImage(url: URL(string: appwrite.getMediaUrl(mediaId: post.mediaId))) { phase in
+                    switch phase {
+                    case .empty:
+                        ProgressView()
+                            .frame(maxWidth: .infinity, minHeight: 300)
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFit()
+                    case .failure:
+                        Image(systemName: "photo")
+                            .font(.largeTitle)
+                            .frame(maxWidth: .infinity, minHeight: 300)
+                    @unknown default:
+                        EmptyView()
+                    }
                 }
             }
             
@@ -132,8 +138,9 @@ struct PostView: View {
                 VStack(alignment: .leading) {
                     Text("Post ID: \(post.id)")
                     Text("User ID: \(post.userId)")
-                    Text("Image ID: \(post.imageId)")
-                    Text("Image URL: \(appwrite.getImageUrl(fileId: post.imageId))")
+                    Text("Media ID: \(post.mediaId)")
+                    Text("Media Type: \(post.mediaType.rawValue)")
+                    Text("Media URL: \(appwrite.getMediaUrl(mediaId: post.mediaId, isVideo: post.mediaType == .video))")
                     Text("Caption: \(post.caption)")
                     Text("Created: \(post.createdAt.formatted())")
                     Text("Likes: \(post.likes)")
