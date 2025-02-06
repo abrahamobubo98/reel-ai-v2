@@ -301,6 +301,7 @@
 				DEVELOPMENT_TEAM = 45SQ5RF492;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "reel-ai-v2/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Schoolr.ai;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "";
@@ -333,6 +334,7 @@
 				DEVELOPMENT_TEAM = 45SQ5RF492;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "reel-ai-v2/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Schoolr.ai;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "";
