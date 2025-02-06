@@ -33,10 +33,10 @@ struct AuthenticationView: View {
                     // Form Fields
                     VStack(spacing: 15) {
                         if viewModel.model.authState == .signUp {
-                            // Username field (only for sign up)
-                            TextField("Username", text: $viewModel.username)
+                            // Name field (only for sign up)
+                            TextField("Name", text: $viewModel.name)
                                 .textFieldStyle(CustomTextFieldStyle())
-                                .autocapitalization(.none)
+                                .autocapitalization(.words)
                         }
                         
                         // Email field

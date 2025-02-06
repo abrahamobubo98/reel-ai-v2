@@ -53,6 +53,8 @@ class CreatePostViewModel: ObservableObject {
     }
     
     func uploadPost() async {
+        guard !model.isUploading else { return }
+        
         guard let image = model.image else {
             model.error = "No image selected"
             return
@@ -67,14 +69,22 @@ class CreatePostViewModel: ObservableObject {
         model.error = nil
         
         do {
+            try Task.checkCancellation()
+            
             // 1. Upload image
             let fileId = try await appwrite.uploadImage(image) { progress in
-                self.model.uploadProgress = progress * 0.7 // Image upload is 70% of total progress
+                Task { @MainActor in
+                    self.model.uploadProgress = progress * 0.7 // Image upload is 70% of total progress
+                }
             }
             model.fileId = fileId
             
+            try Task.checkCancellation()
+            
             // Update progress for database operation
-            model.uploadProgress = 0.8
+            await MainActor.run {
+                model.uploadProgress = 0.8
+            }
             
             // 2. Create post in database
             let post = try await appwrite.createPost(
@@ -82,24 +92,45 @@ class CreatePostViewModel: ObservableObject {
                 caption: model.caption
             )
             
-            model.post = post
-            model.uploadProgress = 1.0
+            try Task.checkCancellation()
             
-            // 3. Reset and dismiss
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                self.model.shouldDismiss = true
-                self.clearImage()
+            await MainActor.run {
+                model.post = post
+                model.uploadProgress = 1.0
             }
             
+            // 3. Reset and dismiss
+            try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second delay
+            
+            await MainActor.run {
+                model.shouldDismiss = true
+                clearImage()
+            }
+            
+        } catch is CancellationError {
+            // Task was cancelled, clean up
+            await MainActor.run {
+                model.error = nil
+                model.isUploading = false
+            }
+            return
         } catch let error as StorageError {
-            model.error = error.localizedDescription
+            await MainActor.run {
+                model.error = error.localizedDescription
+            }
         } catch let error as DatabaseError {
-            model.error = error.localizedDescription
+            await MainActor.run {
+                model.error = error.localizedDescription
+            }
         } catch {
-            model.error = "Failed to create post: \(error.localizedDescription)"
+            await MainActor.run {
+                model.error = "Failed to create post: \(error.localizedDescription)"
+            }
         }
         
-        model.isUploading = false
+        await MainActor.run {
+            model.isUploading = false
+        }
     }
 }
 

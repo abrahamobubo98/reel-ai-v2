@@ -9,7 +9,7 @@ class AuthenticationViewModel: ObservableObject {
     
     // MARK: - User inputs
     @Published var email = ""
-    @Published var username = ""
+    @Published var name = ""
     @Published var password = ""
     @Published var confirmPassword = ""
     
@@ -26,7 +26,7 @@ class AuthenticationViewModel: ObservableObject {
     
     private func clearFields() {
         email = ""
-        username = ""
+        name = ""
         password = ""
         confirmPassword = ""
         errorMessage = ""
@@ -44,16 +44,24 @@ class AuthenticationViewModel: ObservableObject {
                 debugPrint("Successfully signed in: \(session.userId)")
                 // Get user details after login
                 let account = try await appwrite.account.get()
-                username = account.name // Store the username
+                name = account.name // Store the name
                 isAuthenticated = true
                 
             case .signUp:
                 guard validateSignUpFields() else { return }
                 do {
-                    let user = try await appwrite.register(email, password, username: username)
+                    let user = try await appwrite.register(email, password, name: name)
                     debugPrint("Successfully registered: \(user.id)")
-                    // Username is already set from the sign-up form
+                    
+                    // Automatically log in after registration
+                    let session = try await appwrite.login(email, password)
+                    debugPrint("Successfully logged in after registration: \(session.userId)")
+                    
+                    // Get user details
+                    let account = try await appwrite.account.get()
+                    name = account.name // Store the name
                     isAuthenticated = true
+                    
                 } catch let error as NSError {
                     // If it's the scope error, treat it as success since the user is created
                     if error.localizedDescription.contains("missing scope (account)") {
@@ -75,8 +83,8 @@ class AuthenticationViewModel: ObservableObject {
     }
     
     private func validateSignUpFields() -> Bool {
-        guard !username.isEmpty else {
-            errorMessage = "Username is required"
+        guard !name.isEmpty else {
+            errorMessage = "Name is required"
             showError = true
             return false
         }

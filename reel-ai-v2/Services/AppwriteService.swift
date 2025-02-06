@@ -134,17 +134,91 @@ class AppwriteService {
     
     // MARK: - Database Methods
     
+    /// Fetches posts with pagination, sorted by creation date
+    func fetchPosts(limit: Int = 10, offset: Int = 0) async throws -> [Post] {
+        do {
+            debugPrint("📱 Fetching posts with limit: \(limit), offset: \(offset)")
+            debugPrint("📱 Using database ID: \(Constants.databaseId)")
+            debugPrint("📱 Using collection ID: \(Constants.postsCollectionId)")
+            
+            let documents = try await databases.listDocuments(
+                databaseId: Constants.databaseId,
+                collectionId: Constants.postsCollectionId,
+                queries: [
+                    Query.orderDesc("createdAt"),
+                    Query.limit(limit),
+                    Query.offset(offset)
+                ]
+            )
+            
+            debugPrint("📱 Raw response - total documents: \(documents.total)")
+            debugPrint("📱 Raw documents data: \(documents.documents)")
+            
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            
+            let posts = documents.documents.compactMap { (document: Document) -> Post? in
+                let data = document.data
+                debugPrint("📱 Parsing document: \(document.id)")
+                
+                // Extract values from AnyCodable
+                let userId = (data["userId"]?.value as? String) ?? ""
+                let imageId = (data["imageId"]?.value as? String) ?? ""
+                let caption = (data["caption"]?.value as? String) ?? ""
+                let dateString = (data["createdAt"]?.value as? String) ?? ""
+                let likes = (data["likes"]?.value as? Int) ?? 0
+                let comments = (data["comments"]?.value as? Int) ?? 0
+                
+                guard !userId.isEmpty, !imageId.isEmpty, !dateString.isEmpty else {
+                    debugPrint("📱 Missing required fields in document: \(document.id)")
+                    return nil
+                }
+                
+                guard let date = formatter.date(from: dateString) else {
+                    debugPrint("📱 Failed to parse date: \(dateString)")
+                    return nil
+                }
+                
+                return Post(
+                    id: document.id,
+                    userId: userId,
+                    imageId: imageId,
+                    caption: caption,
+                    createdAt: date,
+                    likes: likes,
+                    comments: comments
+                )
+            }
+            
+            debugPrint("📱 Successfully parsed \(posts.count) posts")
+            return posts
+            
+        } catch let error as AppwriteError {
+            debugPrint("📱 Appwrite error fetching posts: \(String(describing: error.type)) - \(String(describing: error.message))")
+            throw DatabaseError.creationFailed("Appwrite error: \(String(describing: error.message))")
+        } catch {
+            debugPrint("📱 Unexpected error fetching posts: \(error)")
+            throw DatabaseError.creationFailed(error.localizedDescription)
+        }
+    }
+    
     /// Creates a new post in the database
     func createPost(imageId: String, caption: String) async throws -> Post {
         do {
+            debugPrint("📱 Starting post creation process...")
+            
             // Get current user
             let user = try await account.get()
+            debugPrint("📱 Got user: \(user.id)")
             
             // Create ISO 8601 date string
             let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             let dateString = formatter.string(from: Date())
+            debugPrint("📱 Created date string: \(dateString)")
             
             // Create post document
+            debugPrint("📱 Attempting to create document with imageId: \(imageId)")
             let document = try await databases.createDocument(
                 databaseId: Constants.databaseId,
                 collectionId: Constants.postsCollectionId,
@@ -158,6 +232,7 @@ class AppwriteService {
                     "comments": 0
                 ]
             )
+            debugPrint("📱 Document created successfully with ID: \(document.id)")
             
             // Create Post object directly from document data
             let post = Post(
@@ -170,16 +245,19 @@ class AppwriteService {
                 comments: document.data["comments"]?.value as? Int ?? 0
             )
             
+            debugPrint("📱 Post object created successfully: \(post)")
             return post
             
         } catch let error as AppwriteError {
+            debugPrint("📱 Appwrite error during post creation: \(String(describing: error.type)) - \(String(describing: error.message))")
             switch error.type {
             case "user_unauthorized":
                 throw DatabaseError.unauthorized
             default:
-                throw DatabaseError.creationFailed(error.message)
+                throw DatabaseError.creationFailed("Appwrite error: \(String(describing: error.message))")
             }
         } catch {
+            debugPrint("📱 Unexpected error during post creation: \(error)")
             throw DatabaseError.creationFailed(error.localizedDescription)
         }
     }
@@ -272,25 +350,24 @@ class AppwriteService {
     }
     
     func getImageUrl(fileId: String) -> String {
-        return "\(Constants.endpoint)/storage/buckets/\(Constants.postMediaBucketId)/files/\(fileId)/view"
+        let baseUrl = "\(Constants.endpoint)/storage/buckets/\(Constants.postMediaBucketId)/files/\(fileId)/view"
+        // Add project information and preview parameters
+        return "\(baseUrl)?project=\(Constants.projectId)"
     }
     
     // MARK: - Authentication Methods
     func register(
         _ email: String,
         _ password: String,
-        username: String? = nil
+        name: String? = nil
     ) async throws -> User<[String: AnyCodable]> {
         do {
-            var user = try await account.create(
+            let user = try await account.create(
                 userId: ID.unique(),
                 email: email,
-                password: password
+                password: password,
+                name: name ?? ""  // Set name during account creation
             )
-            
-            if let username = username {
-                user = try await account.updateName(name: username)
-            }
             
             return user
         } catch let error as AppwriteError {
