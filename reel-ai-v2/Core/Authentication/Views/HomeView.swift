@@ -224,7 +224,7 @@ struct PostView: View {
             HStack {
                 Image(systemName: "person.circle.fill")
                     .font(.title2)
-                Text(post.userId) // TODO: Replace with actual name when available
+                Text(getUserName(from: post.userId))
                     .font(.subheadline)
                     .foregroundColor(.gray)
                 Spacer()
@@ -286,35 +286,33 @@ struct PostView: View {
             .padding(.horizontal)
             .padding(.bottom)
             
-            // Debug JSON Data
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Debug Data:")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                    .padding(.horizontal)
-                
-                VStack(alignment: .leading) {
-                    Text("Post ID: \(post.id)")
-                    Text("User ID: \(post.userId)")
-                    Text("Media ID: \(post.mediaId)")
-                    Text("Media Type: \(post.mediaType.rawValue)")
-                    Text("Media URL: \(appwrite.getMediaUrl(mediaId: post.mediaId, isVideo: post.mediaType == .video))")
-                    Text("Caption: \(post.caption)")
-                    Text("Created: \(post.createdAt.formatted())")
-                    Text("Likes: \(post.likes)")
-                    Text("Comments: \(post.comments)")
+            // Description
+            if !post.caption.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Description:")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .padding(.horizontal)
+                    
+                    Text(post.caption)
+                        .font(.system(.caption, design: .monospaced))
+                        .padding(8)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                        .padding(.horizontal)
                 }
-                .font(.system(.caption, design: .monospaced))
-                .padding(8)
-                .background(Color(.systemGray6))
-                .cornerRadius(8)
-                .padding(.horizontal)
+                .padding(.bottom, 8)
             }
-            .padding(.bottom, 8)
         }
         .background(Color(.systemBackground))
         .cornerRadius(10)
         .shadow(radius: 2)
+    }
+    
+    // Helper function to get user name from ID
+    private func getUserName(from userId: String) -> String {
+        // For now, return a formatted name. In a real app, this would fetch the actual user name
+        return "User \(String(userId.prefix(4)))"
     }
 }
 
@@ -961,6 +959,10 @@ struct ArticlePreviewView: View {
                 Image(systemName: "hand.thumbsup")
                     .padding(.leading)
                 Text("\(Int.random(in: 10...100))")
+                
+                Image(systemName: "message")
+                    .padding(.leading)
+                Text("\(Int.random(in: 5...50))")
                 
                 Spacer()
                 

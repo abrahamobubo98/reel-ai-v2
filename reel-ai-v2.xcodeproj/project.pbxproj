@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E709E7522D55C2A8005E3DD8 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = E709E7512D55C2A8005E3DD8 /* MarkdownUI */; };
 		E7F1F5D22D52BE97009B3191 /* Appwrite in Frameworks */ = {isa = PBXBuildFile; productRef = E7F1F5D12D52BE97009B3191 /* Appwrite */; };
 /* End PBXBuildFile section */
 
@@ -70,6 +71,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E7F1F5D22D52BE97009B3191 /* Appwrite in Frameworks */,
+				E709E7522D55C2A8005E3DD8 /* MarkdownUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -131,6 +133,7 @@
 			name = "reel-ai-v2";
 			packageProductDependencies = (
 				E7F1F5D12D52BE97009B3191 /* Appwrite */,
+				E709E7512D55C2A8005E3DD8 /* MarkdownUI */,
 			);
 			productName = "reel-ai-v2";
 			productReference = E7F1F5992D52608B009B3191 /* reel-ai-v2.app */;
@@ -216,6 +219,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				E7F1F5D02D52BE97009B3191 /* XCRemoteSwiftPackageReference "sdk-for-apple" */,
+				E709E7502D55C112005E3DD8 /* XCRemoteSwiftPackageReference "MarkdownUI" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E7F1F59A2D52608B009B3191 /* Products */;
@@ -586,6 +590,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		E709E7502D55C112005E3DD8 /* XCRemoteSwiftPackageReference "MarkdownUI" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/MarkdownUI";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.4.1;
+			};
+		};
 		E7F1F5D02D52BE97009B3191 /* XCRemoteSwiftPackageReference "sdk-for-apple" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/appwrite/sdk-for-apple";
@@ -598,6 +610,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		E709E7512D55C2A8005E3DD8 /* MarkdownUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E709E7502D55C112005E3DD8 /* XCRemoteSwiftPackageReference "MarkdownUI" */;
+			productName = MarkdownUI;
+		};
 		E7F1F5D12D52BE97009B3191 /* Appwrite */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = E7F1F5D02D52BE97009B3191 /* XCRemoteSwiftPackageReference "sdk-for-apple" */;

@@ -161,15 +161,16 @@ class AppwriteService {
     // MARK: - Constants
     private enum Constants {
         static let endpoint = "https://cloud.appwrite.io/v1"
-        static let projectId = "67a286370021b45dba67"  // Your project ID
-        static let postMediaBucketId = "67a3d0f2002c24b13472"    // Bucket ID for post media
+        static let projectId = "67a286370021b45dba67"
+        static let postMediaBucketId = "67a3d0f2002c24b13472"
         static let apiKey = "standard_32a04112d6a86d68f3be5ad6d9da16ea60733860de5ee91d8f7a71ce08edae860c0c9d275d4d11f098d00b9e30b43accb846cdcac966a7b3325785b5c60932206ca460c7b8014430c9a010b4655fc2d245910267314a9a8a72fcfd7e2c9f1fa3e209995250ac0e4e1fa59f848c647cb2aeefa3907297f517eabfbdac67f9dc85"
         static let maxImageSizeMB = 10
         static let maxVideoSizeMB = 100
         static let compressionQuality: CGFloat = 0.8
         static let maxRetryAttempts = 3
-        static let databaseId = "67a3d388001df90d84c0"    // Database ID from Appwrite Console
-        static let postsCollectionId = "67a3d4320034a6727a55"    // Replace with your actual collection ID from Appwrite Console URL
+        static let databaseId = "67a3d388001df90d84c0"
+        static let postsCollectionId = "67a3d4320034a6727a55"
+        static let articlesCollectionId = "articles" // Replace with your actual collection ID
     }
     
     private init() {
@@ -320,6 +321,157 @@ class AppwriteService {
         } catch {
             debugPrint("📱 Unexpected error during post creation: \(error)")
             throw DatabaseError.creationFailed(error.localizedDescription)
+        }
+    }
+    
+    // MARK: - Article Methods
+    
+    /// Creates a new article in the database
+    func createArticle(title: String, content: String, coverImageId: String? = nil, tags: [String] = []) async throws -> Article {
+        do {
+            debugPrint("📱 Starting article creation process...")
+            
+            // Get current user
+            let user = try await account.get()
+            debugPrint("📱 Got user: \(user.id)")
+            
+            // Create ISO 8601 date string
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let dateString = formatter.string(from: Date())
+            
+            // Create article document
+            let document = try await databases.createDocument(
+                databaseId: Constants.databaseId,
+                collectionId: Constants.articlesCollectionId,
+                documentId: ID.unique(),
+                data: [
+                    "userId": user.id,
+                    "title": title,
+                    "content": content,
+                    "coverImageId": coverImageId ?? "",
+                    "tags": tags,
+                    "createdAt": dateString,
+                    "updatedAt": dateString,
+                    "likes": 0,
+                    "views": 0
+                ]
+            )
+            
+            // Create Article object from document data
+            let article = Article(
+                id: document.id,
+                userId: document.data["userId"]?.value as? String ?? user.id,
+                title: document.data["title"]?.value as? String ?? title,
+                content: document.data["content"]?.value as? String ?? content,
+                coverImageId: document.data["coverImageId"]?.value as? String,
+                tags: document.data["tags"]?.value as? [String] ?? [],
+                createdAt: formatter.date(from: document.data["createdAt"]?.value as? String ?? dateString) ?? Date(),
+                updatedAt: formatter.date(from: document.data["updatedAt"]?.value as? String ?? dateString) ?? Date(),
+                likes: document.data["likes"]?.value as? Int ?? 0,
+                views: document.data["views"]?.value as? Int ?? 0
+            )
+            
+            debugPrint("📱 Article created successfully: \(article)")
+            return article
+            
+        } catch let error as AppwriteError {
+            debugPrint("📱 Appwrite error during article creation: \(String(describing: error.type)) - \(String(describing: error.message))")
+            switch error.type {
+            case "user_unauthorized":
+                throw DatabaseError.unauthorized
+            default:
+                throw DatabaseError.creationFailed("Appwrite error: \(String(describing: error.message))")
+            }
+        } catch {
+            debugPrint("📱 Unexpected error during article creation: \(error)")
+            throw DatabaseError.creationFailed(error.localizedDescription)
+        }
+    }
+    
+    /// Fetches articles with pagination, sorted by creation date
+    func fetchArticles(limit: Int = 10, offset: Int = 0) async throws -> [Article] {
+        do {
+            debugPrint("📱 Fetching articles with limit: \(limit), offset: \(offset)")
+            
+            let documents = try await databases.listDocuments(
+                databaseId: Constants.databaseId,
+                collectionId: Constants.articlesCollectionId,
+                queries: [
+                    Query.orderDesc("createdAt"),
+                    Query.limit(limit),
+                    Query.offset(offset)
+                ]
+            )
+            
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            
+            var articles: [Article] = []
+            for document in documents.documents {
+                let data = document.data
+                
+                let article = Article(
+                    id: document.id,
+                    userId: data["userId"]?.value as? String ?? "",
+                    title: data["title"]?.value as? String ?? "",
+                    content: data["content"]?.value as? String ?? "",
+                    coverImageId: data["coverImageId"]?.value as? String,
+                    tags: data["tags"]?.value as? [String] ?? [],
+                    createdAt: formatter.date(from: data["createdAt"]?.value as? String ?? "") ?? Date(),
+                    updatedAt: formatter.date(from: data["updatedAt"]?.value as? String ?? "") ?? Date(),
+                    likes: data["likes"]?.value as? Int ?? 0,
+                    views: data["views"]?.value as? Int ?? 0
+                )
+                
+                articles.append(article)
+            }
+            
+            debugPrint("📱 Successfully fetched \(articles.count) articles")
+            return articles
+            
+        } catch {
+            debugPrint("📱 Error fetching articles: \(error)")
+            throw error
+        }
+    }
+    
+    /// Updates an existing article
+    func updateArticle(_ article: Article) async throws -> Article {
+        do {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let updateDateString = formatter.string(from: Date())
+            
+            let document = try await databases.updateDocument(
+                databaseId: Constants.databaseId,
+                collectionId: Constants.articlesCollectionId,
+                documentId: article.id,
+                data: [
+                    "title": article.title,
+                    "content": article.content,
+                    "coverImageId": article.coverImageId ?? "",
+                    "tags": article.tags,
+                    "updatedAt": updateDateString
+                ]
+            )
+            
+            return Article(
+                id: document.id,
+                userId: article.userId,
+                title: document.data["title"]?.value as? String ?? article.title,
+                content: document.data["content"]?.value as? String ?? article.content,
+                coverImageId: document.data["coverImageId"]?.value as? String,
+                tags: document.data["tags"]?.value as? [String] ?? article.tags,
+                createdAt: article.createdAt,
+                updatedAt: formatter.date(from: updateDateString) ?? Date(),
+                likes: article.likes,
+                views: article.views
+            )
+            
+        } catch {
+            debugPrint("📱 Error updating article: \(error)")
+            throw error
         }
     }
     

@@ -1,5 +1,7 @@
 import SwiftUI
 import AVKit
+import Foundation
+import MarkdownUI
 
 // MARK: - Model & ViewModel
 struct CreatePostModel {
@@ -233,6 +235,7 @@ struct CreateView: View {
     @Environment(\.presentationMode) private var presentationMode
     @StateObject private var videoPlayer = VideoPlayerManager()
     @State private var showMediaPicker = false
+    @State private var showArticleEditor = false
     
     var body: some View {
         VStack(spacing: 20) {
@@ -357,7 +360,7 @@ struct CreateView: View {
                     }
                     
                     Button(action: {
-                        // Placeholder for article writing functionality
+                        showArticleEditor = true
                     }) {
                         Label("Write Article", systemImage: "doc.text.fill")
                             .frame(maxWidth: .infinity)
@@ -401,6 +404,9 @@ struct CreateView: View {
                     viewModel.handleCapturedVideo(videoURL)
                 }
             )
+        }
+        .sheet(isPresented: $showArticleEditor) {
+            ArticleEditorView()
         }
         .onChange(of: viewModel.model.shouldDismiss) { shouldDismiss in
             if shouldDismiss {
@@ -509,6 +515,219 @@ class VideoPlayerManager: ObservableObject, @unchecked Sendable {
     
     deinit {
         cleanup()
+    }
+}
+
+class ArticleEditorViewModel: ObservableObject {
+    @Published var title: String = ""
+    @Published var content: String = ""
+    @Published var tags: [String] = []
+    @Published var coverImage: UIImage?
+    @Published var isLoading = false
+    @Published var error: String?
+    
+    private let appwrite = AppwriteService.shared
+    
+    @MainActor
+    func saveArticle() async throws {
+        guard !title.isEmpty else {
+            error = "Please add a title"
+            return
+        }
+        
+        guard !content.isEmpty else {
+            error = "Please add some content"
+            return
+        }
+        
+        isLoading = true
+        error = nil
+        
+        do {
+            var coverImageId: String?
+            if let coverImage = coverImage {
+                coverImageId = try await appwrite.uploadImage(coverImage)
+            }
+            
+            let article = try await appwrite.createArticle(
+                title: title,
+                content: content,
+                coverImageId: coverImageId,
+                tags: tags
+            )
+            
+            isLoading = false
+            print("📱 Article created successfully: \(article.id)")
+            
+        } catch {
+            self.error = error.localizedDescription
+            isLoading = false
+        }
+    }
+}
+
+struct ArticleEditorView: View {
+    @StateObject private var viewModel = ArticleEditorViewModel()
+    @Environment(\.dismiss) private var dismiss
+    @State private var showImagePicker = false
+    @State private var showMarkdownHelp = false
+    @State private var selectedTab = 0
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                // Editor Tabs
+                Picker("View Mode", selection: $selectedTab) {
+                    Text("Edit").tag(0)
+                    Text("Preview").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .padding()
+                
+                // Main Content
+                if selectedTab == 0 {
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            // Title
+                            TextField("Article Title", text: $viewModel.title)
+                                .font(.title)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .padding(.horizontal)
+                            
+                            // Cover Image
+                            if let coverImage = viewModel.coverImage {
+                                Image(uiImage: coverImage)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(height: 200)
+                                    .cornerRadius(10)
+                                    .padding()
+                            }
+                            
+                            // Markdown Editor
+                            TextEditor(text: $viewModel.content)
+                                .frame(minHeight: 200)
+                                .padding(8)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
+                                .padding(.horizontal)
+                            
+                            // Formatting Toolbar
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    FormatButton(title: "H1", action: { insertMarkdown("# ") })
+                                    FormatButton(title: "H2", action: { insertMarkdown("## ") })
+                                    FormatButton(title: "H3", action: { insertMarkdown("### ") })
+                                    FormatButton(title: "B", action: { insertMarkdown("**", "**") })
+                                    FormatButton(title: "I", action: { insertMarkdown("*", "*") })
+                                    FormatButton(title: "Link", action: { insertMarkdown("[", "](url)") })
+                                    FormatButton(title: "List", action: { insertMarkdown("- ") })
+                                    FormatButton(title: "1.", action: { insertMarkdown("1. ") })
+                                    FormatButton(title: "Image", action: { showImagePicker = true })
+                                    FormatButton(title: "?", action: { showMarkdownHelp = true })
+                                }
+                                .padding(.horizontal)
+                            }
+                            .padding(.vertical, 8)
+                            .background(Color(.systemGray6))
+                        }
+                    }
+                } else {
+                    // Preview Mode with MarkdownUI
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            if !viewModel.title.isEmpty {
+                                Text(viewModel.title)
+                                    .font(.largeTitle)
+                                    .bold()
+                                    .padding(.bottom, 8)
+                            }
+                            
+                            if let coverImage = viewModel.coverImage {
+                                Image(uiImage: coverImage)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(maxHeight: 300)
+                                    .cornerRadius(10)
+                            }
+                            
+                            Markdown(viewModel.content)
+                                .textSelection(.enabled)
+                                .markdownTheme(.gitHub)
+                        }
+                        .padding()
+                    }
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        Task {
+                            try await viewModel.saveArticle()
+                            dismiss()
+                        }
+                    }) {
+                        if viewModel.isLoading {
+                            ProgressView()
+                        } else {
+                            Text("Publish")
+                        }
+                    }
+                    .disabled(viewModel.isLoading || viewModel.title.isEmpty || viewModel.content.isEmpty)
+                }
+            }
+        }
+        .sheet(isPresented: $showImagePicker) {
+            MediaPickerView(
+                onImageSelected: { image in
+                    viewModel.coverImage = image
+                },
+                onVideoSelected: { _ in
+                    // We don't handle videos for articles
+                }
+            )
+        }
+        .alert("Markdown Help", isPresented: $showMarkdownHelp) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("""
+                # Heading 1
+                ## Heading 2
+                ### Heading 3
+                **Bold**
+                *Italic*
+                [Link](url)
+                - Bullet point
+                1. Numbered list
+                ![Image](url)
+                """)
+        }
+    }
+    
+    private func insertMarkdown(_ prefix: String, _ suffix: String = "") {
+        viewModel.content += "\(prefix)Your text here\(suffix)"
+    }
+}
+
+struct FormatButton: View {
+    let title: String
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(.body, design: .monospaced))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color(.systemBackground))
+                .cornerRadius(6)
+        }
     }
 }
 
