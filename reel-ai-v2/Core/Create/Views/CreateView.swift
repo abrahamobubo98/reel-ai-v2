@@ -357,6 +357,17 @@ struct CreateView: View {
                     }
                     
                     Button(action: {
+                        // Placeholder for article writing functionality
+                    }) {
+                        Label("Write Article", systemImage: "doc.text.fill")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                    }
+                    
+                    Button(action: {
                         // Placeholder for live streaming functionality
                     }) {
                         Label("Stream Live Lecture", systemImage: "antenna.radiowaves.left.and.right")

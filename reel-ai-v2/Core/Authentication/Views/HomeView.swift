@@ -72,20 +72,32 @@ class UserPostsViewModel: ObservableObject {
     @Published var error: String?
     private let appwrite = AppwriteService.shared
     
+    init() {
+        print("📱 UserPostsViewModel: Initialized")
+    }
+    
+    deinit {
+        print("📱 UserPostsViewModel: Deinitialized")
+    }
+    
     @MainActor
     func loadUserPosts() async {
+        print("📱 UserPostsViewModel: Starting to load user posts")
+        print("📱 UserPostsViewModel: Current posts count before loading: \(posts.count)")
+        
         isLoading = true
         error = nil
         
         do {
-            // TODO: Update this to fetch only the current user's posts
             posts = try await appwrite.fetchPosts(limit: 50, offset: 0)
+            print("📱 UserPostsViewModel: Successfully loaded \(posts.count) posts")
         } catch {
             self.error = error.localizedDescription
-            print("📱 Error loading user posts: \(error.localizedDescription)")
+            print("📱 UserPostsViewModel: Error loading user posts: \(error.localizedDescription)")
         }
         
         isLoading = false
+        print("📱 UserPostsViewModel: Finished loading. Current posts count: \(posts.count)")
     }
 }
 
@@ -496,13 +508,118 @@ struct PostsTabView: View {
                 LazyVGrid(columns: columns, spacing: 1) {
                     ForEach(viewModel.posts, id: \.id) { post in
                         PostThumbnailView(post: post)
+                            .id(post.id) // Add explicit id to help SwiftUI with view identity
                     }
                 }
             }
         }
         .task {
+            print("📱 PostsTabView: Loading user posts")
             await viewModel.loadUserPosts()
         }
+        .onAppear {
+            print("📱 PostsTabView: View appeared")
+            print("📱 PostsTabView: Current posts count: \(viewModel.posts.count)")
+        }
+        .onDisappear {
+            print("📱 PostsTabView: View disappeared")
+        }
+    }
+}
+
+struct VideoThumbnailContent: View {
+    let post: Post
+    @ObservedObject var thumbnailLoader: VideoThumbnailLoader
+    let cache: MediaCache
+    
+    var body: some View {
+        if let cachedThumbnail = cache.getImage(forKey: post.mediaId, isThumbnail: true) {
+            Image(uiImage: cachedThumbnail)
+                .resizable()
+                .scaledToFill()
+        } else if thumbnailLoader.isLoading {
+            ProgressView()
+        } else if let thumbnail = thumbnailLoader.thumbnail {
+            Image(uiImage: thumbnail)
+                .resizable()
+                .scaledToFill()
+                .onAppear {
+                    cache.cacheImage(thumbnail, forKey: post.mediaId, isThumbnail: true)
+                }
+        } else if thumbnailLoader.error != nil {
+            Image(systemName: "video.slash.fill")
+                .font(.title)
+                .foregroundColor(.gray)
+        } else {
+            Color.clear
+                .onAppear {
+                    print("📱 Loading video thumbnail for post \(post.id)")
+                    let videoUrl = AppwriteService.shared.getMediaUrl(mediaId: post.mediaId, isVideo: true, forThumbnail: false)
+                    print("📱 Using video URL for thumbnail generation: \(videoUrl)")
+                    thumbnailLoader.loadThumbnail(from: videoUrl)
+                }
+        }
+    }
+}
+
+struct ImageThumbnailContent: View {
+    let post: Post
+    let cache: MediaCache
+    let appwrite: AppwriteService
+    @State private var displayImage: UIImage?
+    
+    var body: some View {
+        ZStack {
+            if let image = displayImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ProgressView()
+                    .onAppear {
+                        loadImage()
+                    }
+            }
+        }
+        .onAppear {
+            loadImage()
+        }
+    }
+    
+    private func loadImage() {
+        // First try to get from cache
+        if let cachedImage = cache.getImage(forKey: post.mediaId) {
+            print("📱 ImageThumbnailContent: Loading from cache for post \(post.id)")
+            displayImage = cachedImage
+            return
+        }
+        
+        // If not in cache, load from URL
+        let imageUrl = appwrite.getMediaUrl(mediaId: post.mediaId, isVideo: false)
+        print("📱 ImageThumbnailContent: Loading from URL for post \(post.id): \(imageUrl)")
+        
+        guard let url = URL(string: imageUrl) else {
+            print("📱 ImageThumbnailContent: Invalid URL for post \(post.id)")
+            return
+        }
+        
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            if let error = error {
+                print("📱 ImageThumbnailContent: Error loading image for post \(post.id): \(error.localizedDescription)")
+                return
+            }
+            
+            guard let data = data, let image = UIImage(data: data) else {
+                print("📱 ImageThumbnailContent: Invalid image data for post \(post.id)")
+                return
+            }
+            
+            DispatchQueue.main.async {
+                print("📱 ImageThumbnailContent: Successfully loaded image for post \(post.id)")
+                self.cache.cacheImage(image, forKey: post.mediaId)
+                self.displayImage = image
+            }
+        }.resume()
     }
 }
 
@@ -517,76 +634,9 @@ struct PostThumbnailView: View {
         GeometryReader { geometry in
             Group {
                 if post.mediaType == .video {
-                    if let cachedThumbnail = cache.getImage(forKey: post.mediaId, isThumbnail: true) {
-                        Image(uiImage: cachedThumbnail)
-                            .resizable()
-                            .scaledToFill()
-                    } else if thumbnailLoader.isLoading {
-                        ProgressView()
-                    } else if let thumbnail = thumbnailLoader.thumbnail {
-                        Image(uiImage: thumbnail)
-                            .resizable()
-                            .scaledToFill()
-                            .onAppear {
-                                cache.cacheImage(thumbnail, forKey: post.mediaId, isThumbnail: true)
-                            }
-                    } else if thumbnailLoader.error != nil {
-                        Image(systemName: "video.slash.fill")
-                            .font(.title)
-                            .foregroundColor(.gray)
-                    } else {
-                        Color.clear
-                            .onAppear {
-                                print("📱 Loading video thumbnail for post \(post.id)")
-                                // Use the actual video URL for thumbnail generation
-                                let videoUrl = appwrite.getMediaUrl(mediaId: post.mediaId, isVideo: true, forThumbnail: false)
-                                print("📱 Using video URL for thumbnail generation: \(videoUrl)")
-                                thumbnailLoader.loadThumbnail(from: videoUrl)
-                            }
-                    }
+                    VideoThumbnailContent(post: post, thumbnailLoader: thumbnailLoader, cache: cache)
                 } else {
-                    if let cachedImage = cache.getImage(forKey: post.mediaId) {
-                        print("📱 Using cached image for post \(post.id)")
-                        Image(uiImage: cachedImage)
-                            .resizable()
-                            .scaledToFill()
-                    } else {
-                        print("📱 No cached image found for post \(post.id), loading from URL")
-                        let imageUrl = appwrite.getMediaUrl(mediaId: post.mediaId, isVideo: false)
-                        print("📱 Image URL: \(imageUrl)")
-                        AsyncImage(url: URL(string: imageUrl)) { phase in
-                            switch phase {
-                            case .empty:
-                                ProgressView()
-                                    .onAppear {
-                                        print("📱 Starting image load for post \(post.id)")
-                                    }
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                                    .onAppear {
-                                        print("📱 Successfully loaded image for post \(post.id)")
-                                        if let uiImage = image.asUIImage() {
-                                            print("📱 Converting SwiftUI Image to UIImage for post \(post.id)")
-                                            cache.cacheImage(uiImage, forKey: post.mediaId)
-                                            print("📱 Successfully cached image for post \(post.id)")
-                                        } else {
-                                            print("📱 Failed to convert SwiftUI Image to UIImage for post \(post.id)")
-                                        }
-                                    }
-                            case .failure(let error):
-                                Image(systemName: "photo")
-                                    .font(.title)
-                                    .foregroundColor(.gray)
-                                    .onAppear {
-                                        print("📱 Failed to load image for post \(post.id). Error: \(error.localizedDescription)")
-                                    }
-                            @unknown default:
-                                EmptyView()
-                            }
-                        }
-                    }
+                    ImageThumbnailContent(post: post, cache: cache, appwrite: appwrite)
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.width)
@@ -616,16 +666,22 @@ struct PostThumbnailView: View {
 extension Image {
     func asUIImage() -> UIImage? {
         let controller = UIHostingController(rootView: self)
-        let view = controller.view
         
+        // Ensure the controller's view is using the correct size
         let targetSize = controller.view.intrinsicContentSize
-        view?.bounds = CGRect(origin: .zero, size: targetSize)
-        view?.backgroundColor = .clear
+        controller.view.bounds = CGRect(origin: .zero, size: targetSize)
+        controller.view.backgroundColor = .clear
         
-        let renderer = UIGraphicsImageRenderer(size: targetSize)
-        return renderer.image { _ in
-            view?.drawHierarchy(in: controller.view.bounds, afterScreenUpdates: true)
+        // Render synchronously to avoid lifecycle issues
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+        let uiImage = renderer.image { context in
+            controller.view.drawHierarchy(in: controller.view.bounds, afterScreenUpdates: false)
         }
+        
+        return uiImage.cgImage != nil ? uiImage : nil
     }
 }
 
@@ -760,35 +816,72 @@ struct ClassesTabView: View {
 struct HomeView: View {
     @ObservedObject var viewModel: AuthenticationViewModel
     @StateObject private var homeViewModel = HomeViewModel()
+    @State private var selectedFeed: FeedType = .posts
+    
+    enum FeedType {
+        case posts
+        case articles
+    }
     
     var body: some View {
         TabView {
             // Home Tab
-            ScrollView {
-                LazyVStack(spacing: 20) {
-                    ForEach(homeViewModel.posts, id: \.id) { post in
-                        PostView(post: post)
-                            .padding(.horizontal)
+            VStack(spacing: 0) {
+                // Feed Toggle
+                HStack {
+                    Picker("Feed Type", selection: $selectedFeed) {
+                        Text("Posts").tag(FeedType.posts)
+                        Text("Articles").tag(FeedType.articles)
                     }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
                     
-                    if homeViewModel.isLoading {
-                        ProgressView()
-                            .padding()
-                    }
-                    
-                    if let error = homeViewModel.error {
-                        Text(error)
-                            .foregroundColor(.red)
-                            .padding()
+                    Spacer()
+                }
+                .padding(.vertical, 8)
+                .background(Color(.systemBackground))
+                
+                // Content
+                ScrollView {
+                    if selectedFeed == .posts {
+                        LazyVStack(spacing: 20) {
+                            ForEach(homeViewModel.posts, id: \.id) { post in
+                                PostView(post: post)
+                                    .padding(.horizontal)
+                            }
+                            
+                            if homeViewModel.isLoading {
+                                ProgressView()
+                                    .padding()
+                            }
+                            
+                            if let error = homeViewModel.error {
+                                Text(error)
+                                    .foregroundColor(.red)
+                                    .padding()
+                            }
+                        }
+                        .padding(.vertical)
+                    } else {
+                        LazyVStack(spacing: 20) {
+                            ForEach(1...5, id: \.self) { index in
+                                ArticlePreviewView(index: index)
+                                    .padding(.horizontal)
+                            }
+                        }
+                        .padding(.vertical)
                     }
                 }
-                .padding(.vertical)
-            }
-            .refreshable {
-                homeViewModel.loadPosts()
+                .refreshable {
+                    if selectedFeed == .posts {
+                        homeViewModel.loadPosts()
+                    }
+                }
             }
             .onAppear {
-                homeViewModel.loadPosts()
+                if selectedFeed == .posts {
+                    homeViewModel.loadPosts()
+                }
             }
             .tabItem {
                 Image(systemName: "house.fill")
@@ -831,6 +924,55 @@ struct HomeView: View {
                     Text("Settings")
                 }
         }
+    }
+}
+
+struct ArticlePreviewView: View {
+    let index: Int
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Author info
+            HStack {
+                Image(systemName: "person.circle.fill")
+                    .font(.title2)
+                Text("Author \(index)")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                Spacer()
+            }
+            
+            // Article Title
+            Text("Sample Article \(index)")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            // Article Preview
+            Text("This is a placeholder for article \(index). It will contain a preview of the article content. The actual implementation will fetch real articles from the backend.")
+                .font(.body)
+                .foregroundColor(.gray)
+                .lineLimit(3)
+            
+            // Metadata
+            HStack {
+                Image(systemName: "eye")
+                Text("\(Int.random(in: 100...1000))")
+                
+                Image(systemName: "hand.thumbsup")
+                    .padding(.leading)
+                Text("\(Int.random(in: 10...100))")
+                
+                Spacer()
+                
+                Text("\(Int.random(in: 1...24))h ago")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
+        .shadow(radius: 2)
     }
 }
 
