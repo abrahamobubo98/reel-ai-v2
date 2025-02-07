@@ -3,6 +3,37 @@ import Appwrite
 import JSONCodable
 import UIKit
 
+class MediaCache {
+    static let shared = MediaCache()
+    
+    private let imageCache = NSCache<NSString, UIImage>()
+    private let thumbnailCache = NSCache<NSString, UIImage>()
+    
+    private init() {
+        // Set cache limits (adjust these based on your app's memory requirements)
+        imageCache.countLimit = 100  // Maximum number of images
+        imageCache.totalCostLimit = 1024 * 1024 * 100  // 100 MB
+        
+        thumbnailCache.countLimit = 200  // Maximum number of thumbnails
+        thumbnailCache.totalCostLimit = 1024 * 1024 * 50  // 50 MB
+    }
+    
+    func cacheImage(_ image: UIImage, forKey key: String, isThumbnail: Bool = false) {
+        let cache = isThumbnail ? thumbnailCache : imageCache
+        cache.setObject(image, forKey: key as NSString)
+    }
+    
+    func getImage(forKey key: String, isThumbnail: Bool = false) -> UIImage? {
+        let cache = isThumbnail ? thumbnailCache : imageCache
+        return cache.object(forKey: key as NSString)
+    }
+    
+    func clearCache() {
+        imageCache.removeAllObjects()
+        thumbnailCache.removeAllObjects()
+    }
+}
+
 /// Custom errors for storage operations
 enum StorageError: LocalizedError {
     case invalidImage
@@ -52,7 +83,7 @@ enum DatabaseError: LocalizedError {
 }
 
 /// Post model for database operations
-struct Post: Codable {
+struct Post: Codable, Identifiable {
     let id: String
     let userId: String
     let mediaId: String
@@ -402,14 +433,26 @@ class AppwriteService {
         }
     }
     
-    func getMediaUrl(mediaId: String, isVideo: Bool = false) -> String {
-        let baseUrl = "\(Constants.endpoint)/storage/buckets/\(Constants.postMediaBucketId)/files/\(mediaId)/view"
-        var url = "\(baseUrl)?project=\(Constants.projectId)"
+    func getMediaUrl(mediaId: String, isVideo: Bool = false, forThumbnail: Bool = false) -> String {
+        let baseUrl = "\(Constants.endpoint)/storage/buckets/\(Constants.postMediaBucketId)/files/\(mediaId)"
+        var url = baseUrl
         
-        // Add additional parameters for video if needed
         if isVideo {
-            url += "&output=video"
+            if forThumbnail {
+                // For video thumbnails, use preview endpoint
+                url += "/preview?width=400&height=400&gravity=center&quality=100&output=jpeg"
+                url += "&project=\(Constants.projectId)"
+            } else {
+                // For video playback, use view endpoint
+                url += "/view?project=\(Constants.projectId)"
+            }
+        } else {
+            // For images, use view endpoint
+            url += "/view?project=\(Constants.projectId)"
         }
+        
+        // Add API key
+        url += "&key=\(Constants.apiKey)"
         
         return url
     }
