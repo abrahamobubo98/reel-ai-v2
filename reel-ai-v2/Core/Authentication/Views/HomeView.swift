@@ -4,6 +4,7 @@ import AVFoundation
 
 class HomeViewModel: ObservableObject {
     @Published var posts: [Post] = []
+    @Published var articles: [Article] = []
     @Published var isLoading = false
     @Published var error: String?
     private var currentOffset = 0
@@ -55,6 +56,48 @@ class HomeViewModel: ObservableObject {
                     return
                 }
                 self.error = "Failed to load posts. Pull to refresh and try again."
+            }
+            
+            isLoading = false
+        }
+    }
+    
+    @MainActor
+    func loadArticles() async {
+        // Cancel any existing loading task
+        loadingTask?.cancel()
+        
+        // Create new loading task
+        loadingTask = Task {
+            guard !isLoading else {
+                print("📱 Loading already in progress, skipping")
+                return
+            }
+            
+            isLoading = true
+            error = nil
+            articles = []
+            
+            do {
+                print("📱 Fetching articles...")
+                let fetchedArticles = try await appwrite.fetchArticles(limit: limit, offset: 0)
+                
+                // Check if task was cancelled
+                if Task.isCancelled {
+                    print("📱 Task was cancelled, aborting article load")
+                    return
+                }
+                
+                print("📱 Successfully fetched \(fetchedArticles.count) articles")
+                articles = fetchedArticles
+                error = nil
+            } catch {
+                print("📱 Error loading articles: \(error.localizedDescription)")
+                if error is CancellationError {
+                    // Don't show cancellation errors to the user
+                    return
+                }
+                self.error = "Failed to load articles. Pull to refresh and try again."
             }
             
             isLoading = false
@@ -224,7 +267,7 @@ struct PostView: View {
             HStack {
                 Image(systemName: "person.circle.fill")
                     .font(.title2)
-                Text(getUserName(from: post.userId))
+                Text(post.author)
                     .font(.subheadline)
                     .foregroundColor(.gray)
                 Spacer()
@@ -308,17 +351,12 @@ struct PostView: View {
         .cornerRadius(10)
         .shadow(radius: 2)
     }
-    
-    // Helper function to get user name from ID
-    private func getUserName(from userId: String) -> String {
-        // For now, return a formatted name. In a real app, this would fetch the actual user name
-        return "User \(String(userId.prefix(4)))"
-    }
 }
 
 struct SettingsView: View {
     @ObservedObject var viewModel: AuthenticationViewModel
     @State private var selectedTab = 0
+    @StateObject private var homeViewModel = HomeViewModel()
     
     var body: some View {
         ScrollView {
@@ -461,7 +499,7 @@ struct SettingsView: View {
                         PostsTabView()
                             .tag(0)
                         
-                        ArticlesTabView()
+                        ArticlesTabView(viewModel: homeViewModel)
                             .tag(1)
                         
                         StreamsTabView()
@@ -747,7 +785,7 @@ struct PostDetailView: View {
                         HStack {
                             Image(systemName: "person.circle.fill")
                                 .font(.title2)
-                            Text(post.userId)
+                            Text(post.author)
                                 .font(.subheadline)
                                 .foregroundColor(.gray)
                             Spacer()
@@ -794,8 +832,197 @@ struct PostDetailView: View {
 }
 
 struct ArticlesTabView: View {
+    @ObservedObject var viewModel: HomeViewModel
+    
     var body: some View {
-        Text("Articles")
+        ScrollView {
+            if viewModel.isLoading {
+                ProgressView()
+                    .padding()
+            } else if let error = viewModel.error {
+                Text(error)
+                    .foregroundColor(.red)
+                    .padding()
+            } else if viewModel.articles.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 48))
+                        .foregroundColor(.gray)
+                    Text("No articles yet")
+                        .font(.headline)
+                    Text("Be the first to write an article!")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.vertical, 40)
+            } else {
+                LazyVStack(spacing: 16) {
+                    ForEach(viewModel.articles) { article in
+                        ArticlePreviewView(article: article)
+                            .padding(.horizontal)
+                    }
+                }
+                .padding(.vertical)
+            }
+        }
+        .refreshable {
+            await viewModel.loadArticles()
+        }
+        .task {
+            await viewModel.loadArticles()
+        }
+    }
+}
+
+struct ArticlePreviewView: View {
+    let article: Article
+    @State private var showDetail = false
+    
+    var body: some View {
+        Button(action: { showDetail = true }) {
+            VStack(alignment: .leading, spacing: 12) {
+                // Title
+                Text(article.title)
+                    .font(.headline)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                
+                // Preview of content
+                Text(article.content)
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+                
+                // Metadata
+                HStack {
+                    // Author info
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.circle.fill")
+                            .foregroundColor(.gray)
+                        Text(article.author)
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                    
+                    Spacer()
+                    
+                    // Date
+                    Text(article.createdAt, style: .relative)
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+                
+                // Stats
+                HStack(spacing: 16) {
+                    // Views
+                    HStack(spacing: 4) {
+                        Image(systemName: "eye")
+                        Text("\(article.views)")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    
+                    // Likes
+                    HStack(spacing: 4) {
+                        Image(systemName: "heart")
+                        Text("\(article.likes)")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    
+                    // Comments
+                    HStack(spacing: 4) {
+                        Image(systemName: "message")
+                        Text("0") // TODO: Implement comments count
+                    }
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                }
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .shadow(radius: 2)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .sheet(isPresented: $showDetail) {
+            ArticleDetailView(article: article)
+        }
+    }
+}
+
+struct ArticleDetailView: View {
+    let article: Article
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Title
+                    Text(article.title)
+                        .font(.title)
+                        .bold()
+                        .padding(.bottom, 4)
+                    
+                    // Author and date
+                    HStack {
+                        HStack(spacing: 4) {
+                            Image(systemName: "person.circle.fill")
+                            Text(article.author)
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        
+                        Spacer()
+                        
+                        Text(article.createdAt, style: .date)
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                    
+                    // Content
+                    Text(article.content)
+                        .font(.body)
+                        .lineSpacing(8)
+                    
+                    // Stats
+                    HStack(spacing: 24) {
+                        // Views
+                        HStack(spacing: 8) {
+                            Image(systemName: "eye")
+                            Text("\(article.views) views")
+                        }
+                        
+                        // Likes
+                        HStack(spacing: 8) {
+                            Image(systemName: "heart")
+                            Text("\(article.likes) likes")
+                        }
+                        
+                        // Comments
+                        HStack(spacing: 8) {
+                            Image(systemName: "message")
+                            Text("0 comments") // TODO: Implement comments
+                        }
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                    .padding(.top, 8)
+                }
+                .padding()
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -842,43 +1069,94 @@ struct HomeView: View {
                 // Content
                 ScrollView {
                     if selectedFeed == .posts {
-                        LazyVStack(spacing: 20) {
-                            ForEach(homeViewModel.posts, id: \.id) { post in
-                                PostView(post: post)
-                                    .padding(.horizontal)
+                        if homeViewModel.isLoading {
+                            ProgressView()
+                                .padding()
+                        } else if let error = homeViewModel.error {
+                            Text(error)
+                                .foregroundColor(.red)
+                                .padding()
+                        } else if homeViewModel.posts.isEmpty {
+                            VStack(spacing: 16) {
+                                Image(systemName: "photo.on.rectangle.angled")
+                                    .font(.system(size: 48))
+                                    .foregroundColor(.gray)
+                                Text("No posts yet")
+                                    .font(.headline)
+                                Text("Be the first to share something!")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
                             }
-                            
-                            if homeViewModel.isLoading {
-                                ProgressView()
-                                    .padding()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .padding(.vertical, 40)
+                        } else {
+                            LazyVStack(spacing: 20) {
+                                ForEach(homeViewModel.posts, id: \.id) { post in
+                                    PostView(post: post)
+                                        .padding(.horizontal)
+                                }
                             }
-                            
-                            if let error = homeViewModel.error {
-                                Text(error)
-                                    .foregroundColor(.red)
-                                    .padding()
-                            }
+                            .padding(.vertical)
                         }
-                        .padding(.vertical)
                     } else {
-                        LazyVStack(spacing: 20) {
-                            ForEach(1...5, id: \.self) { index in
-                                ArticlePreviewView(index: index)
-                                    .padding(.horizontal)
+                        // Articles View
+                        if homeViewModel.isLoading {
+                            ProgressView()
+                                .padding()
+                        } else if let error = homeViewModel.error {
+                            Text(error)
+                                .foregroundColor(.red)
+                                .padding()
+                        } else if homeViewModel.articles.isEmpty {
+                            VStack(spacing: 16) {
+                                Image(systemName: "doc.text")
+                                    .font(.system(size: 48))
+                                    .foregroundColor(.gray)
+                                Text("No articles yet")
+                                    .font(.headline)
+                                Text("Be the first to write an article!")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
                             }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .padding(.vertical, 40)
+                        } else {
+                            LazyVStack(spacing: 16) {
+                                ForEach(homeViewModel.articles) { article in
+                                    ArticlePreviewView(article: article)
+                                        .padding(.horizontal)
+                                }
+                            }
+                            .padding(.vertical)
                         }
-                        .padding(.vertical)
                     }
                 }
                 .refreshable {
                     if selectedFeed == .posts {
                         homeViewModel.loadPosts()
+                    } else {
+                        Task {
+                            await homeViewModel.loadArticles()
+                        }
+                    }
+                }
+            }
+            .onChange(of: selectedFeed) { newValue in
+                if newValue == .posts {
+                    homeViewModel.loadPosts()
+                } else {
+                    Task {
+                        await homeViewModel.loadArticles()
                     }
                 }
             }
             .onAppear {
                 if selectedFeed == .posts {
                     homeViewModel.loadPosts()
+                } else {
+                    Task {
+                        await homeViewModel.loadArticles()
+                    }
                 }
             }
             .tabItem {
@@ -922,59 +1200,6 @@ struct HomeView: View {
                     Text("Settings")
                 }
         }
-    }
-}
-
-struct ArticlePreviewView: View {
-    let index: Int
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Author info
-            HStack {
-                Image(systemName: "person.circle.fill")
-                    .font(.title2)
-                Text("Author \(index)")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-                Spacer()
-            }
-            
-            // Article Title
-            Text("Sample Article \(index)")
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            // Article Preview
-            Text("This is a placeholder for article \(index). It will contain a preview of the article content. The actual implementation will fetch real articles from the backend.")
-                .font(.body)
-                .foregroundColor(.gray)
-                .lineLimit(3)
-            
-            // Metadata
-            HStack {
-                Image(systemName: "eye")
-                Text("\(Int.random(in: 100...1000))")
-                
-                Image(systemName: "hand.thumbsup")
-                    .padding(.leading)
-                Text("\(Int.random(in: 10...100))")
-                
-                Image(systemName: "message")
-                    .padding(.leading)
-                Text("\(Int.random(in: 5...50))")
-                
-                Spacer()
-                
-                Text("\(Int.random(in: 1...24))h ago")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-            }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(10)
-        .shadow(radius: 2)
     }
 }
 

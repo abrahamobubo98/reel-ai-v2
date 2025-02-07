@@ -3,6 +3,7 @@ import Foundation
 struct Article: Codable, Identifiable {
     let id: String
     let userId: String
+    let author: String
     let title: String
     let content: String
     let coverImageId: String?
@@ -15,6 +16,7 @@ struct Article: Codable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id = "$id"
         case userId
+        case author
         case title
         case content
         case coverImageId
@@ -29,6 +31,7 @@ struct Article: Codable, Identifiable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         userId = try container.decode(String.self, forKey: .userId)
+        author = try container.decode(String.self, forKey: .author)
         title = try container.decode(String.self, forKey: .title)
         content = try container.decode(String.self, forKey: .content)
         coverImageId = try container.decode(String?.self, forKey: .coverImageId)
@@ -60,9 +63,10 @@ struct Article: Codable, Identifiable {
         }
     }
     
-    init(id: String, userId: String, title: String, content: String, coverImageId: String?, tags: [String], createdAt: Date, updatedAt: Date, likes: Int, views: Int) {
+    init(id: String, userId: String, author: String, title: String, content: String, coverImageId: String?, tags: [String], createdAt: Date, updatedAt: Date, likes: Int, views: Int) {
         self.id = id
         self.userId = userId
+        self.author = author
         self.title = title
         self.content = content
         self.coverImageId = coverImageId

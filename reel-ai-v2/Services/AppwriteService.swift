@@ -86,6 +86,7 @@ enum DatabaseError: LocalizedError {
 struct Post: Codable, Identifiable {
     let id: String
     let userId: String
+    let author: String
     let mediaId: String
     let mediaType: MediaType
     let caption: String
@@ -99,9 +100,10 @@ struct Post: Codable, Identifiable {
         case video
     }
     
-    init(id: String, userId: String, mediaId: String, mediaType: MediaType = .photo, caption: String, externalLink: String = "", createdAt: Date, likes: Int, comments: Int) {
+    init(id: String, userId: String, author: String, mediaId: String, mediaType: MediaType = .photo, caption: String, externalLink: String = "", createdAt: Date, likes: Int, comments: Int) {
         self.id = id
         self.userId = userId
+        self.author = author
         self.mediaId = mediaId
         self.mediaType = mediaType
         self.caption = caption
@@ -114,6 +116,7 @@ struct Post: Codable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id = "$id"
         case userId
+        case author
         case mediaId
         case mediaType
         case caption
@@ -127,6 +130,7 @@ struct Post: Codable, Identifiable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         userId = try container.decode(String.self, forKey: .userId)
+        author = try container.decode(String.self, forKey: .author)
         mediaId = try container.decode(String.self, forKey: .mediaId)
         mediaType = try container.decode(MediaType.self, forKey: .mediaType)
         caption = try container.decode(String.self, forKey: .caption)
@@ -146,6 +150,13 @@ struct Post: Codable, Identifiable {
             createdAt = Date()
         }
     }
+}
+
+/// Add a UserInfo struct
+struct UserInfo {
+    let id: String
+    let name: String
+    let email: String
 }
 
 /// Service class to handle all Appwrite related operations
@@ -170,8 +181,12 @@ class AppwriteService {
         static let maxRetryAttempts = 3
         static let databaseId = "67a3d388001df90d84c0"
         static let postsCollectionId = "67a3d4320034a6727a55"
-        static let articlesCollectionId = "articles" // Replace with your actual collection ID
+        static let articlesCollectionId = "67a58f8d001dcc4329a6"
+        static let usersCollectionId = "67a64c36002fc4f4d747" // Replace with your actual collection ID
     }
+    
+    // Add user cache to avoid repeated fetches
+    private var userCache: [String: UserInfo] = [:]
     
     private init() {
         self.client = Client()
@@ -216,6 +231,7 @@ class AppwriteService {
                 
                 // Extract values from AnyCodable
                 let userId = (data["userId"]?.value as? String) ?? ""
+                let author = (data["author"]?.value as? String) ?? "Unknown User"
                 let mediaId = (data["mediaId"]?.value as? String) ?? ""
                 let caption = (data["caption"]?.value as? String) ?? ""
                 let dateString = (data["createdAt"]?.value as? String) ?? ""
@@ -236,6 +252,7 @@ class AppwriteService {
                 let post = Post(
                     id: document.id,
                     userId: userId,
+                    author: author,
                     mediaId: mediaId,
                     mediaType: Post.MediaType(rawValue: mediaTypeString) ?? .photo,
                     caption: caption,
@@ -283,6 +300,7 @@ class AppwriteService {
                 documentId: ID.unique(),
                 data: [
                     "userId": user.id,
+                    "author": user.name,
                     "mediaId": mediaId,
                     "mediaType": mediaType.rawValue,
                     "caption": caption,
@@ -298,6 +316,7 @@ class AppwriteService {
             let post = Post(
                 id: document.id,
                 userId: document.data["userId"]?.value as? String ?? user.id,
+                author: document.data["author"]?.value as? String ?? user.name,
                 mediaId: document.data["mediaId"]?.value as? String ?? mediaId,
                 mediaType: Post.MediaType(rawValue: document.data["mediaType"]?.value as? String ?? mediaType.rawValue) ?? mediaType,
                 caption: document.data["caption"]?.value as? String ?? caption,
@@ -329,24 +348,29 @@ class AppwriteService {
     /// Creates a new article in the database
     func createArticle(title: String, content: String, coverImageId: String? = nil, tags: [String] = []) async throws -> Article {
         do {
-            debugPrint("📱 Starting article creation process...")
+            print("📱 AppwriteService: Starting article creation")
+            print("📱 AppwriteService: Using database ID: \(Constants.databaseId)")
+            print("📱 AppwriteService: Using collection ID: \(Constants.articlesCollectionId)")
             
             // Get current user
             let user = try await account.get()
-            debugPrint("📱 Got user: \(user.id)")
+            print("📱 AppwriteService: Got user: \(user.id)")
             
             // Create ISO 8601 date string
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             let dateString = formatter.string(from: Date())
+            print("📱 AppwriteService: Created date string: \(dateString)")
             
             // Create article document
+            print("📱 AppwriteService: Attempting to create article document")
             let document = try await databases.createDocument(
                 databaseId: Constants.databaseId,
                 collectionId: Constants.articlesCollectionId,
                 documentId: ID.unique(),
                 data: [
                     "userId": user.id,
+                    "author": user.name,  // Add author name
                     "title": title,
                     "content": content,
                     "coverImageId": coverImageId ?? "",
@@ -357,11 +381,14 @@ class AppwriteService {
                     "views": 0
                 ]
             )
+            print("📱 AppwriteService: Document created successfully with ID: \(document.id)")
+            print("📱 AppwriteService: Raw document data: \(document.data)")
             
             // Create Article object from document data
             let article = Article(
                 id: document.id,
                 userId: document.data["userId"]?.value as? String ?? user.id,
+                author: document.data["author"]?.value as? String ?? user.name,  // Add author name
                 title: document.data["title"]?.value as? String ?? title,
                 content: document.data["content"]?.value as? String ?? content,
                 coverImageId: document.data["coverImageId"]?.value as? String,
@@ -372,11 +399,11 @@ class AppwriteService {
                 views: document.data["views"]?.value as? Int ?? 0
             )
             
-            debugPrint("📱 Article created successfully: \(article)")
+            print("📱 AppwriteService: Article object created successfully: \(article)")
             return article
             
         } catch let error as AppwriteError {
-            debugPrint("📱 Appwrite error during article creation: \(String(describing: error.type)) - \(String(describing: error.message))")
+            print("📱 AppwriteService: Appwrite error during article creation: \(String(describing: error.type)) - \(String(describing: error.message))")
             switch error.type {
             case "user_unauthorized":
                 throw DatabaseError.unauthorized
@@ -384,7 +411,7 @@ class AppwriteService {
                 throw DatabaseError.creationFailed("Appwrite error: \(String(describing: error.message))")
             }
         } catch {
-            debugPrint("📱 Unexpected error during article creation: \(error)")
+            print("📱 AppwriteService: Unexpected error during article creation: \(error)")
             throw DatabaseError.creationFailed(error.localizedDescription)
         }
     }
@@ -414,6 +441,7 @@ class AppwriteService {
                 let article = Article(
                     id: document.id,
                     userId: data["userId"]?.value as? String ?? "",
+                    author: data["author"]?.value as? String ?? "Unknown User",
                     title: data["title"]?.value as? String ?? "",
                     content: data["content"]?.value as? String ?? "",
                     coverImageId: data["coverImageId"]?.value as? String,
@@ -459,6 +487,7 @@ class AppwriteService {
             return Article(
                 id: document.id,
                 userId: article.userId,
+                author: article.author,
                 title: document.data["title"]?.value as? String ?? article.title,
                 content: document.data["content"]?.value as? String ?? article.content,
                 coverImageId: document.data["coverImageId"]?.value as? String,
@@ -658,5 +687,36 @@ class AppwriteService {
     
     func logout() async throws {
         _ = try await account.deleteSession(sessionId: "current")
+    }
+    
+    // Add method to fetch user info
+    func getUserInfo(userId: String) async throws -> UserInfo {
+        // Check cache first
+        if let cachedUser = userCache[userId] {
+            return cachedUser
+        }
+        
+        do {
+            let document = try await databases.getDocument(
+                databaseId: Constants.databaseId,
+                collectionId: Constants.usersCollectionId,
+                documentId: userId
+            )
+            
+            let userInfo = UserInfo(
+                id: userId,
+                name: document.data["name"]?.value as? String ?? "Unknown User",
+                email: document.data["email"]?.value as? String ?? ""
+            )
+            
+            // Cache the result
+            userCache[userId] = userInfo
+            
+            return userInfo
+        } catch {
+            debugPrint("📱 Error fetching user info: \(error)")
+            // Return a default user info if fetch fails
+            return UserInfo(id: userId, name: "User \(String(userId.prefix(4)))", email: "")
+        }
     }
 } 

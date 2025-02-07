@@ -530,13 +530,19 @@ class ArticleEditorViewModel: ObservableObject {
     
     @MainActor
     func saveArticle() async throws {
+        print("📱 ArticleEditorViewModel: Starting article save process")
+        print("📱 ArticleEditorViewModel: Title length: \(title.count)")
+        print("📱 ArticleEditorViewModel: Content length: \(content.count)")
+        
         guard !title.isEmpty else {
             error = "Please add a title"
+            print("📱 ArticleEditorViewModel: Error - Empty title")
             return
         }
         
         guard !content.isEmpty else {
             error = "Please add some content"
+            print("📱 ArticleEditorViewModel: Error - Empty content")
             return
         }
         
@@ -544,11 +550,14 @@ class ArticleEditorViewModel: ObservableObject {
         error = nil
         
         do {
+            print("📱 ArticleEditorViewModel: Attempting to upload cover image")
             var coverImageId: String?
             if let coverImage = coverImage {
                 coverImageId = try await appwrite.uploadImage(coverImage)
+                print("📱 ArticleEditorViewModel: Cover image uploaded successfully with ID: \(coverImageId ?? "none")")
             }
             
+            print("📱 ArticleEditorViewModel: Creating article with title: \(title)")
             let article = try await appwrite.createArticle(
                 title: title,
                 content: content,
@@ -557,9 +566,11 @@ class ArticleEditorViewModel: ObservableObject {
             )
             
             isLoading = false
-            print("📱 Article created successfully: \(article.id)")
+            print("📱 ArticleEditorViewModel: Article created successfully with ID: \(article.id)")
+            print("📱 ArticleEditorViewModel: Article details - userId: \(article.userId), title: \(article.title)")
             
         } catch {
+            print("📱 ArticleEditorViewModel: Error creating article: \(error.localizedDescription)")
             self.error = error.localizedDescription
             isLoading = false
         }
