@@ -69,6 +69,8 @@ enum DatabaseError: LocalizedError {
     case invalidPost
     case creationFailed(String)
     case unauthorized
+    case updateFailed(String)
+    case fetchFailed(String)
     
     var errorDescription: String? {
         switch self {
@@ -78,6 +80,10 @@ enum DatabaseError: LocalizedError {
             return "Failed to create post: \(reason)"
         case .unauthorized:
             return "You must be logged in to create a post"
+        case .updateFailed(let reason):
+            return "Failed to update post: \(reason)"
+        case .fetchFailed(let reason):
+            return "Failed to fetch post: \(reason)"
         }
     }
 }
@@ -164,13 +170,20 @@ class AppwriteService {
     // MARK: - Properties
     static let shared = AppwriteService()
     
+    // MARK: - Public Constants
+    static let postsCollectionId = "67a3d4320034a6727a55"
+    static let articlesCollectionId = "67a58f8d001dcc4329a6"
+    static let likesCollectionId = "67a7e4cf0036cba3a09d"
+    static let commentsCollectionId = "67aa3e110013042f9ed2"
+    
     var client: Client
     var account: Account
     var storage: Storage
     var databases: Databases
     
     // MARK: - Constants
-    private enum Constants {
+    /// Constants used throughout the service
+    enum Constants {
         static let endpoint = "https://cloud.appwrite.io/v1"
         static let projectId = "67a286370021b45dba67"
         static let postMediaBucketId = "67a3d0f2002c24b13472"
@@ -180,9 +193,9 @@ class AppwriteService {
         static let compressionQuality: CGFloat = 0.8
         static let maxRetryAttempts = 3
         static let databaseId = "67a3d388001df90d84c0"
-        static let postsCollectionId = "67a3d4320034a6727a55"
-        static let articlesCollectionId = "67a58f8d001dcc4329a6"
         static let usersCollectionId = "67a64c36002fc4f4d747" // Replace with your actual collection ID
+        static let storageId = "67a3d3c0001e6a0e84c1"
+        static let bucketId = "67a3d3e0001e6a0e84c2"
     }
     
     // Add user cache to avoid repeated fetches
@@ -206,11 +219,11 @@ class AppwriteService {
         do {
             debugPrint("📱 Fetching posts with limit: \(limit), offset: \(offset)")
             debugPrint("📱 Using database ID: \(Constants.databaseId)")
-            debugPrint("📱 Using collection ID: \(Constants.postsCollectionId)")
+            debugPrint("📱 Using collection ID: \(Self.postsCollectionId)")
             
             let documents = try await databases.listDocuments(
                 databaseId: Constants.databaseId,
-                collectionId: Constants.postsCollectionId,
+                collectionId: Self.postsCollectionId,
                 queries: [
                     Query.orderDesc("createdAt"),
                     Query.limit(limit),
@@ -296,7 +309,7 @@ class AppwriteService {
             debugPrint("📱 Attempting to create document with mediaId: \(mediaId)")
             let document = try await databases.createDocument(
                 databaseId: Constants.databaseId,
-                collectionId: Constants.postsCollectionId,
+                collectionId: Self.postsCollectionId,
                 documentId: ID.unique(),
                 data: [
                     "userId": user.id,
@@ -350,7 +363,7 @@ class AppwriteService {
         do {
             print("📱 AppwriteService: Starting article creation")
             print("📱 AppwriteService: Using database ID: \(Constants.databaseId)")
-            print("📱 AppwriteService: Using collection ID: \(Constants.articlesCollectionId)")
+            print("📱 AppwriteService: Using collection ID: \(Self.articlesCollectionId)")
             
             // Get current user
             let user = try await account.get()
@@ -366,11 +379,11 @@ class AppwriteService {
             print("📱 AppwriteService: Attempting to create article document")
             let document = try await databases.createDocument(
                 databaseId: Constants.databaseId,
-                collectionId: Constants.articlesCollectionId,
+                collectionId: Self.articlesCollectionId,
                 documentId: ID.unique(),
                 data: [
                     "userId": user.id,
-                    "author": user.name,  // Add author name
+                    "author": user.name,
                     "title": title,
                     "content": content,
                     "coverImageId": coverImageId ?? "",
@@ -388,7 +401,7 @@ class AppwriteService {
             let article = Article(
                 id: document.id,
                 userId: document.data["userId"]?.value as? String ?? user.id,
-                author: document.data["author"]?.value as? String ?? user.name,  // Add author name
+                author: document.data["author"]?.value as? String ?? user.name,
                 title: document.data["title"]?.value as? String ?? title,
                 content: document.data["content"]?.value as? String ?? content,
                 coverImageId: document.data["coverImageId"]?.value as? String,
@@ -423,7 +436,7 @@ class AppwriteService {
             
             let documents = try await databases.listDocuments(
                 databaseId: Constants.databaseId,
-                collectionId: Constants.articlesCollectionId,
+                collectionId: Self.articlesCollectionId,
                 queries: [
                     Query.orderDesc("createdAt"),
                     Query.limit(limit),
@@ -473,7 +486,7 @@ class AppwriteService {
             
             let document = try await databases.updateDocument(
                 databaseId: Constants.databaseId,
-                collectionId: Constants.articlesCollectionId,
+                collectionId: Self.articlesCollectionId,
                 documentId: article.id,
                 data: [
                     "title": article.title,
@@ -717,6 +730,465 @@ class AppwriteService {
             debugPrint("📱 Error fetching user info: \(error)")
             // Return a default user info if fetch fails
             return UserInfo(id: userId, name: "User \(String(userId.prefix(4)))", email: "")
+        }
+    }
+    
+    // MARK: - Like Methods
+    
+    /// Likes a post or article
+    func like(documentId: String, collectionId: String) async throws {
+        debugPrint("📱 Like: Starting like operation for document \(documentId) in collection \(collectionId)")
+        
+        guard let user = try? await account.get() else {
+            debugPrint("📱 Like: Failed - User not authenticated")
+            throw DatabaseError.unauthorized
+        }
+        debugPrint("📱 Like: User authenticated with ID: \(user.id)")
+        
+        do {
+            // First, get current likes count
+            debugPrint("📱 Like: Fetching current document")
+            let document = try await databases.getDocument(
+                databaseId: Constants.databaseId,
+                collectionId: collectionId,
+                documentId: documentId
+            )
+            
+            let currentLikes = (document.data["likes"]?.value as? Int) ?? 0
+            debugPrint("📱 Like: Current likes count: \(currentLikes)")
+            
+            // Then increment likes count
+            debugPrint("📱 Like: Updating likes count to \(currentLikes + 1)")
+            _ = try await databases.updateDocument(
+                databaseId: Constants.databaseId,
+                collectionId: collectionId,
+                documentId: documentId,
+                data: [
+                    "likes": currentLikes + 1
+                ]
+            )
+            debugPrint("📱 Like: Successfully updated likes count")
+            
+            // Check if a like record already exists
+            debugPrint("📱 Like: Checking for existing like record")
+            let likes = try await databases.listDocuments(
+                databaseId: Constants.databaseId,
+                collectionId: Self.likesCollectionId,
+                queries: [
+                    Query.equal("userId", value: user.id),
+                    Query.equal("documentId", value: documentId)
+                ]
+            )
+            debugPrint("📱 Like: Found \(likes.documents.count) existing like records")
+            
+            if let existingLike = likes.documents.first {
+                debugPrint("📱 Like: Found existing like record with ID: \(existingLike.id)")
+                // Update existing like record with optional isLiked field
+                var updateData: [String: Any] = [:]
+                
+                // Check if isLiked field exists
+                if let isLikedValue = existingLike.data["isLiked"]?.value as? Bool {
+                    debugPrint("📱 Like: Existing record has isLiked field with value: \(isLikedValue)")
+                    updateData["isLiked"] = true
+                } else {
+                    debugPrint("📱 Like: Existing record does not have isLiked field")
+                }
+                
+                if !updateData.isEmpty {
+                    debugPrint("📱 Like: Updating existing record with data: \(updateData)")
+                    _ = try await databases.updateDocument(
+                        databaseId: Constants.databaseId,
+                        collectionId: Self.likesCollectionId,
+                        documentId: existingLike.id,
+                        data: updateData
+                    )
+                    debugPrint("📱 Like: Successfully updated existing like record")
+                } else {
+                    debugPrint("📱 Like: No update needed for existing record")
+                }
+            } else {
+                // Create new like record with optional isLiked field
+                let likeId = ID.unique()
+                debugPrint("📱 Like: Creating new like record with ID: \(likeId)")
+                var createData: [String: Any] = [
+                    "userId": user.id,
+                    "documentId": documentId,
+                    "collectionId": collectionId,
+                    "createdAt": Date().ISO8601Format()
+                ]
+                
+                // Check if isLiked field exists in schema
+                debugPrint("📱 Like: Checking if isLiked field exists in schema")
+                if let existingDoc = try? await databases.listDocuments(
+                    databaseId: Constants.databaseId,
+                    collectionId: Self.likesCollectionId,
+                    queries: []
+                ).documents.first {
+                    if existingDoc.data["isLiked"] != nil {
+                        debugPrint("📱 Like: isLiked field exists in schema, adding to create data")
+                        createData["isLiked"] = true
+                    } else {
+                        debugPrint("📱 Like: isLiked field does not exist in schema")
+                    }
+                }
+                
+                debugPrint("📱 Like: Creating new record with data: \(createData)")
+                _ = try await databases.createDocument(
+                    databaseId: Constants.databaseId,
+                    collectionId: Self.likesCollectionId,
+                    documentId: likeId,
+                    data: createData
+                )
+                debugPrint("📱 Like: Successfully created new like record")
+            }
+        } catch {
+            debugPrint("📱 Like: Error occurred: \(error.localizedDescription)")
+            if let appwriteError = error as? AppwriteError {
+                debugPrint("📱 Like: Appwrite error type: \(String(describing: appwriteError.type))")
+                debugPrint("📱 Like: Appwrite error message: \(String(describing: appwriteError.message))")
+            }
+            throw DatabaseError.updateFailed(error.localizedDescription)
+        }
+    }
+    
+    /// Unlikes a post or article
+    func unlike(documentId: String, collectionId: String) async throws {
+        debugPrint("📱 Unlike: Starting unlike operation for document \(documentId) in collection \(collectionId)")
+        
+        guard let user = try? await account.get() else {
+            debugPrint("📱 Unlike: Failed - User not authenticated")
+            throw DatabaseError.unauthorized
+        }
+        debugPrint("📱 Unlike: User authenticated with ID: \(user.id)")
+        
+        do {
+            // First, get current likes count
+            debugPrint("📱 Unlike: Fetching current document")
+            let document = try await databases.getDocument(
+                databaseId: Constants.databaseId,
+                collectionId: collectionId,
+                documentId: documentId
+            )
+            
+            let currentLikes = (document.data["likes"]?.value as? Int) ?? 0
+            let newLikes = max(0, currentLikes - 1) // Prevent negative likes
+            debugPrint("📱 Unlike: Current likes: \(currentLikes), New likes: \(newLikes)")
+            
+            // Then decrement likes count
+            debugPrint("📱 Unlike: Updating likes count")
+            _ = try await databases.updateDocument(
+                databaseId: Constants.databaseId,
+                collectionId: collectionId,
+                documentId: documentId,
+                data: [
+                    "likes": newLikes
+                ]
+            )
+            debugPrint("📱 Unlike: Successfully updated likes count")
+            
+            // Find and update the like record
+            debugPrint("📱 Unlike: Finding like record")
+            let likes = try await databases.listDocuments(
+                databaseId: Constants.databaseId,
+                collectionId: Self.likesCollectionId,
+                queries: [
+                    Query.equal("userId", value: user.id),
+                    Query.equal("documentId", value: documentId)
+                ]
+            )
+            
+            if let likeDoc = likes.documents.first {
+                debugPrint("📱 Unlike: Found like record with ID: \(likeDoc.id)")
+                var updateData: [String: Any] = [:]
+                
+                // Check if isLiked field exists
+                if let isLikedValue = likeDoc.data["isLiked"]?.value as? Bool {
+                    debugPrint("📱 Unlike: Existing record has isLiked field with value: \(isLikedValue)")
+                    updateData["isLiked"] = false
+                } else {
+                    debugPrint("📱 Unlike: Existing record does not have isLiked field")
+                }
+                
+                if !updateData.isEmpty {
+                    debugPrint("📱 Unlike: Updating record with data: \(updateData)")
+                    _ = try await databases.updateDocument(
+                        databaseId: Constants.databaseId,
+                        collectionId: Self.likesCollectionId,
+                        documentId: likeDoc.id,
+                        data: updateData
+                    )
+                    debugPrint("📱 Unlike: Successfully updated like record")
+                } else {
+                    debugPrint("📱 Unlike: No update needed for record")
+                }
+            } else {
+                debugPrint("📱 Unlike: No like record found to update")
+            }
+        } catch {
+            debugPrint("📱 Unlike: Error occurred: \(error.localizedDescription)")
+            if let appwriteError = error as? AppwriteError {
+                debugPrint("📱 Unlike: Appwrite error type: \(String(describing: appwriteError.type))")
+                debugPrint("📱 Unlike: Appwrite error message: \(String(describing: appwriteError.message))")
+            }
+            throw DatabaseError.updateFailed(error.localizedDescription)
+        }
+    }
+    
+    /// Checks if a user has liked a document
+    func hasLiked(documentId: String) async throws -> Bool {
+        debugPrint("📱 HasLiked: Checking like status for document \(documentId)")
+        
+        guard let user = try? await account.get() else {
+            debugPrint("📱 HasLiked: Failed - User not authenticated")
+            throw DatabaseError.unauthorized
+        }
+        debugPrint("📱 HasLiked: User authenticated with ID: \(user.id)")
+        
+        do {
+            debugPrint("📱 HasLiked: Building query conditions")
+            var queries: [String] = [
+                Query.equal("userId", value: user.id),
+                Query.equal("documentId", value: documentId)
+            ]
+            
+            // Check if isLiked field exists in schema
+            debugPrint("📱 HasLiked: Checking if isLiked field exists in schema")
+            if let existingDoc = try? await databases.listDocuments(
+                databaseId: Constants.databaseId,
+                collectionId: Self.likesCollectionId,
+                queries: []
+            ).documents.first {
+                if existingDoc.data["isLiked"] != nil {
+                    debugPrint("📱 HasLiked: isLiked field exists in schema, adding to query")
+                    queries.append(Query.equal("isLiked", value: true))
+                } else {
+                    debugPrint("📱 HasLiked: isLiked field does not exist in schema")
+                }
+            }
+            
+            debugPrint("📱 HasLiked: Executing query with conditions: \(queries)")
+            let likes = try await databases.listDocuments(
+                databaseId: Constants.databaseId,
+                collectionId: Self.likesCollectionId,
+                queries: queries
+            )
+            
+            let hasLiked = !likes.documents.isEmpty
+            debugPrint("📱 HasLiked: Found \(likes.documents.count) matching records")
+            debugPrint("📱 HasLiked: Result - \(hasLiked)")
+            return hasLiked
+        } catch {
+            debugPrint("📱 HasLiked: Error occurred: \(error.localizedDescription)")
+            if let appwriteError = error as? AppwriteError {
+                debugPrint("📱 HasLiked: Appwrite error type: \(String(describing: appwriteError.type))")
+                debugPrint("📱 HasLiked: Appwrite error message: \(String(describing: appwriteError.message))")
+            }
+            throw DatabaseError.fetchFailed(error.localizedDescription)
+        }
+    }
+    
+    // MARK: - Comment Methods
+    
+    /// Creates a new comment on a post or article
+    func createComment(text: String, documentId: String, collectionId: String) async throws -> Comment {
+        debugPrint("📱 CreateComment: Starting comment creation for document \(documentId)")
+        
+        guard let user = try? await account.get() else {
+            debugPrint("📱 CreateComment: Failed - User not authenticated")
+            throw DatabaseError.unauthorized
+        }
+        debugPrint("📱 CreateComment: User authenticated with ID: \(user.id)")
+        
+        do {
+            // Validate text length
+            guard Comment.validateText(text) else {
+                throw DatabaseError.creationFailed("Comment text exceeds maximum length of \(Comment.maxTextLength) characters")
+            }
+            
+            let commentId = ID.unique()
+            let dateString = Date().ISO8601Format()
+            
+            debugPrint("📱 CreateComment: Creating comment document")
+            let document = try await databases.createDocument(
+                databaseId: Constants.databaseId,
+                collectionId: Self.commentsCollectionId,
+                documentId: commentId,
+                data: [
+                    "userId": user.id,
+                    "author": user.name,
+                    "documentId": documentId,
+                    "text": text,
+                    "createdAt": dateString
+                ]
+            )
+            debugPrint("📱 CreateComment: Comment created with ID: \(commentId)")
+            
+            // Increment comments count on the parent document
+            debugPrint("📱 CreateComment: Updating comments count on parent document")
+            let parentDoc = try await databases.getDocument(
+                databaseId: Constants.databaseId,
+                collectionId: collectionId,
+                documentId: documentId
+            )
+            
+            let currentComments = (parentDoc.data["comments"]?.value as? Int) ?? 0
+            debugPrint("📱 CreateComment: Current comments count: \(currentComments)")
+            
+            _ = try await databases.updateDocument(
+                databaseId: Constants.databaseId,
+                collectionId: collectionId,
+                documentId: documentId,
+                data: [
+                    "comments": currentComments + 1
+                ]
+            )
+            debugPrint("📱 CreateComment: Updated comments count to \(currentComments + 1)")
+            
+            // Create and return Comment object
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            
+            let comment = Comment(
+                id: document.id,
+                documentId: documentId,
+                userId: user.id,
+                author: user.name,
+                text: text,
+                createdAt: formatter.date(from: dateString) ?? Date()
+            )
+            return comment
+            
+        } catch {
+            debugPrint("📱 CreateComment: Error occurred: \(error.localizedDescription)")
+            if let appwriteError = error as? AppwriteError {
+                debugPrint("📱 CreateComment: Appwrite error type: \(String(describing: appwriteError.type))")
+                debugPrint("📱 CreateComment: Appwrite error message: \(String(describing: appwriteError.message))")
+            }
+            throw DatabaseError.creationFailed(error.localizedDescription)
+        }
+    }
+    
+    /// Fetches comments for a post or article
+    func fetchComments(documentId: String, limit: Int = 10, offset: Int = 0) async throws -> [Comment] {
+        debugPrint("📱 FetchComments: Starting fetch for document \(documentId)")
+        
+        do {
+            let documents = try await databases.listDocuments(
+                databaseId: Constants.databaseId,
+                collectionId: Self.commentsCollectionId,
+                queries: [
+                    Query.equal("documentId", value: documentId),
+                    Query.orderDesc("createdAt"),
+                    Query.limit(limit),
+                    Query.offset(offset)
+                ]
+            )
+            
+            debugPrint("📱 FetchComments: Found \(documents.documents.count) comments")
+            
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            
+            return documents.documents.compactMap { document in
+                debugPrint("📱 FetchComments: Processing document ID: \(document.id)")
+                debugPrint("📱 FetchComments: Raw document data: \(document.data)")
+                
+                let userId = document.data["userId"]?.value as? String ?? ""
+                let author = document.data["author"]?.value as? String ?? ""
+                let text = document.data["text"]?.value as? String ?? ""
+                let dateString = document.data["createdAt"]?.value as? String ?? ""
+                
+                debugPrint("📱 FetchComments: Extracted values - userId: \(userId), author: \(author), text: \(text), dateString: \(dateString)")
+                
+                guard let date = formatter.date(from: dateString) else {
+                    debugPrint("📱 FetchComments: Failed to parse date string: \(dateString)")
+                    return nil
+                }
+                
+                debugPrint("📱 FetchComments: Successfully parsed date: \(date)")
+                
+                let comment = Comment(
+                    id: document.id,
+                    documentId: documentId,
+                    userId: userId,
+                    author: author,
+                    text: text,
+                    createdAt: date
+                )
+                debugPrint("📱 FetchComments: Successfully created Comment object: \(comment)")
+                return comment
+            }
+            
+        } catch {
+            debugPrint("📱 FetchComments: Error occurred: \(error.localizedDescription)")
+            if let appwriteError = error as? AppwriteError {
+                debugPrint("📱 FetchComments: Appwrite error type: \(String(describing: appwriteError.type))")
+                debugPrint("📱 FetchComments: Appwrite error message: \(String(describing: appwriteError.message))")
+            }
+            throw DatabaseError.fetchFailed(error.localizedDescription)
+        }
+    }
+    
+    /// Deletes a comment
+    func deleteComment(commentId: String, documentId: String, collectionId: String) async throws {
+        debugPrint("📱 DeleteComment: Starting deletion of comment \(commentId)")
+        
+        guard let user = try? await account.get() else {
+            debugPrint("📱 DeleteComment: Failed - User not authenticated")
+            throw DatabaseError.unauthorized
+        }
+        debugPrint("📱 DeleteComment: User authenticated with ID: \(user.id)")
+        
+        do {
+            // First verify the comment belongs to the user
+            let comment = try await databases.getDocument(
+                databaseId: Constants.databaseId,
+                collectionId: Self.commentsCollectionId,
+                documentId: commentId
+            )
+            
+            guard let commentUserId = comment.data["userId"]?.value as? String,
+                  commentUserId == user.id else {
+                debugPrint("📱 DeleteComment: Failed - User not authorized to delete this comment")
+                throw DatabaseError.unauthorized
+            }
+            
+            // Delete the comment
+            debugPrint("📱 DeleteComment: Deleting comment document")
+            _ = try await databases.deleteDocument(
+                databaseId: Constants.databaseId,
+                collectionId: Self.commentsCollectionId,
+                documentId: commentId
+            )
+            
+            // Decrement comments count on the parent document
+            debugPrint("📱 DeleteComment: Updating comments count on parent document")
+            let parentDoc = try await databases.getDocument(
+                databaseId: Constants.databaseId,
+                collectionId: collectionId,
+                documentId: documentId
+            )
+            
+            let currentComments = (parentDoc.data["comments"]?.value as? Int) ?? 0
+            debugPrint("📱 DeleteComment: Current comments count: \(currentComments)")
+            
+            _ = try await databases.updateDocument(
+                databaseId: Constants.databaseId,
+                collectionId: collectionId,
+                documentId: documentId,
+                data: [
+                    "comments": max(0, currentComments - 1)
+                ]
+            )
+            debugPrint("📱 DeleteComment: Updated comments count to \(max(0, currentComments - 1))")
+            
+        } catch {
+            debugPrint("📱 DeleteComment: Error occurred: \(error.localizedDescription)")
+            if let appwriteError = error as? AppwriteError {
+                debugPrint("📱 DeleteComment: Appwrite error type: \(String(describing: appwriteError.type))")
+                debugPrint("📱 DeleteComment: Appwrite error message: \(String(describing: appwriteError.message))")
+            }
+            throw DatabaseError.updateFailed(error.localizedDescription)
         }
     }
 } 

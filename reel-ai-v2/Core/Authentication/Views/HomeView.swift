@@ -260,6 +260,19 @@ struct VideoPlayerView: View {
 struct PostView: View {
     let post: Post
     let appwrite = AppwriteService.shared
+    @State private var isLiked = false
+    @State private var likeCount: Int
+    @State private var isLoading = false
+    @State private var commentText = ""
+    @State private var isAddingComment = false
+    @State private var showComments = false
+    @State private var comments: [Comment] = []
+    @State private var errorMessage: String?
+    
+    init(post: Post) {
+        self.post = post
+        self._likeCount = State(initialValue: post.likes)
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -314,11 +327,14 @@ struct PostView: View {
             
             // Metadata
             HStack {
-                Image(systemName: "heart")
-                Text("\(post.likes)")
-                
-                Image(systemName: "message")
-                Text("\(post.comments)")
+                Button(action: handleLikeAction) {
+                    HStack {
+                        Image(systemName: isLiked ? "heart.fill" : "heart")
+                            .foregroundColor(isLiked ? .red : .primary)
+                        Text("\(likeCount)")
+                    }
+                }
+                .disabled(isLoading)
                 
                 Spacer()
                 
@@ -346,10 +362,151 @@ struct PostView: View {
                 }
                 .padding(.bottom, 8)
             }
+            
+            // Comments Section
+            VStack(alignment: .leading, spacing: 8) {
+                Button(action: {
+                    showComments.toggle()
+                    if showComments {
+                        loadComments()
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "message")
+                        Text("\(post.comments) Comments")
+                        Spacer()
+                        Image(systemName: showComments ? "chevron.up" : "chevron.down")
+                    }
+                    .foregroundColor(.primary)
+                }
+                .padding(.horizontal)
+                
+                if showComments {
+                    // Comment Input
+                    HStack {
+                        TextField("Add a comment...", text: $commentText)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .disabled(isAddingComment)
+                        
+                        Button(action: addComment) {
+                            if isAddingComment {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                            } else {
+                                Text("Post")
+                                    .foregroundColor(commentText.isEmpty ? .gray : .blue)
+                            }
+                        }
+                        .disabled(commentText.isEmpty || isAddingComment)
+                    }
+                    .padding(.horizontal)
+                    
+                    if let error = errorMessage {
+                        Text(error)
+                            .foregroundColor(.red)
+                            .font(.caption)
+                            .padding(.horizontal)
+                    }
+                    
+                    // Comments List
+                    ForEach(comments) { comment in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(comment.author)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Spacer()
+                                Text(comment.createdAt, style: .relative)
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                            }
+                            Text(comment.text)
+                                .font(.subheadline)
+                        }
+                        .padding(.horizontal)
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .padding(.vertical, 8)
         }
         .background(Color(.systemBackground))
         .cornerRadius(10)
         .shadow(radius: 2)
+        .task {
+            // Check if user has liked the post
+            do {
+                isLiked = try await appwrite.hasLiked(documentId: post.id)
+            } catch {
+                print("📱 Error checking like status: \(error)")
+            }
+        }
+    }
+    
+    private func handleLikeAction() {
+        guard !isLoading else { return }
+        isLoading = true
+        
+        Task {
+            do {
+                if isLiked {
+                    try await appwrite.unlike(documentId: post.id, collectionId: AppwriteService.postsCollectionId)
+                    likeCount -= 1
+                } else {
+                    try await appwrite.like(documentId: post.id, collectionId: AppwriteService.postsCollectionId)
+                    likeCount += 1
+                }
+                isLiked.toggle()
+            } catch {
+                print("📱 Error handling like action: \(error)")
+            }
+            isLoading = false
+        }
+    }
+    
+    private func loadComments() {
+        Task {
+            do {
+                debugPrint("📱 PostView: Loading comments for post \(post.id)")
+                comments = try await appwrite.fetchComments(documentId: post.id)
+                debugPrint("📱 PostView: Successfully loaded \(comments.count) comments")
+            } catch {
+                debugPrint("📱 PostView: Error loading comments: \(error)")
+                errorMessage = "Failed to load comments"
+            }
+        }
+    }
+    
+    private func addComment() {
+        guard !commentText.isEmpty else { return }
+        
+        isAddingComment = true
+        errorMessage = nil
+        
+        Task {
+            do {
+                debugPrint("📱 PostView: Adding comment to post \(post.id)")
+                debugPrint("📱 PostView: Comment text: \(commentText)")
+                
+                let comment = try await appwrite.createComment(
+                    text: commentText,
+                    documentId: post.id,
+                    collectionId: AppwriteService.postsCollectionId
+                )
+                
+                debugPrint("📱 PostView: Successfully added comment: \(comment)")
+                
+                await MainActor.run {
+                    commentText = ""
+                    comments.insert(comment, at: 0)
+                    isAddingComment = false
+                }
+            } catch {
+                debugPrint("📱 PostView: Error adding comment: \(error)")
+                errorMessage = "Failed to add comment"
+                isAddingComment = false
+            }
+        }
     }
 }
 
@@ -727,6 +884,15 @@ struct PostDetailView: View {
     private let appwrite = AppwriteService.shared
     private let cache = MediaCache.shared
     
+    @State private var isLiked = false
+    @State private var likeCount: Int
+    @State private var isLoading = false
+    
+    init(post: Post) {
+        self.post = post
+        self._likeCount = State(initialValue: post.likes)
+    }
+    
     var body: some View {
         NavigationView {
             ScrollView {
@@ -800,12 +966,14 @@ struct PostDetailView: View {
                         
                         // Metadata
                         HStack {
-                            Image(systemName: "heart")
-                            Text("\(post.likes)")
-                            
-                            Image(systemName: "message")
-                                .padding(.leading)
-                            Text("\(post.comments)")
+                            Button(action: handleLikeAction) {
+                                HStack {
+                                    Image(systemName: isLiked ? "heart.fill" : "heart")
+                                        .foregroundColor(isLiked ? .red : .primary)
+                                    Text("\(likeCount)")
+                                }
+                            }
+                            .disabled(isLoading)
                             
                             Spacer()
                             
@@ -828,6 +996,35 @@ struct PostDetailView: View {
             }
         }
         .navigationViewStyle(.stack)
+        .task {
+            // Check if user has liked the post
+            do {
+                isLiked = try await appwrite.hasLiked(documentId: post.id)
+            } catch {
+                print("📱 Error checking like status: \(error)")
+            }
+        }
+    }
+    
+    private func handleLikeAction() {
+        guard !isLoading else { return }
+        isLoading = true
+        
+        Task {
+            do {
+                if isLiked {
+                    try await appwrite.unlike(documentId: post.id, collectionId: AppwriteService.postsCollectionId)
+                    likeCount -= 1
+                } else {
+                    try await appwrite.like(documentId: post.id, collectionId: AppwriteService.postsCollectionId)
+                    likeCount += 1
+                }
+                isLiked.toggle()
+            } catch {
+                print("📱 Error handling like action: \(error)")
+            }
+            isLoading = false
+        }
     }
 }
 
@@ -878,6 +1075,15 @@ struct ArticlesTabView: View {
 struct ArticlePreviewView: View {
     let article: Article
     @State private var showDetail = false
+    @State private var isLiked = false
+    @State private var likeCount: Int
+    @State private var isLoading = false
+    private let appwrite = AppwriteService.shared
+    
+    init(article: Article) {
+        self.article = article
+        self._likeCount = State(initialValue: article.likes)
+    }
     
     var body: some View {
         Button(action: { showDetail = true }) {
@@ -925,12 +1131,16 @@ struct ArticlePreviewView: View {
                     .foregroundColor(.gray)
                     
                     // Likes
-                    HStack(spacing: 4) {
-                        Image(systemName: "heart")
-                        Text("\(article.likes)")
+                    Button(action: handleLikeAction) {
+                        HStack(spacing: 4) {
+                            Image(systemName: isLiked ? "heart.fill" : "heart")
+                                .foregroundColor(isLiked ? .red : .gray)
+                            Text("\(likeCount)")
+                        }
+                        .font(.caption)
+                        .foregroundColor(.gray)
                     }
-                    .font(.caption)
-                    .foregroundColor(.gray)
+                    .disabled(isLoading)
                     
                     // Comments
                     HStack(spacing: 4) {
@@ -950,12 +1160,72 @@ struct ArticlePreviewView: View {
         .sheet(isPresented: $showDetail) {
             ArticleDetailView(article: article)
         }
+        .task {
+            // Check if user has liked the article
+            do {
+                debugPrint("📱 ArticlePreviewView: Checking like status for article \(article.id)")
+                debugPrint("📱 ArticlePreviewView: Current like count: \(likeCount)")
+                isLiked = try await appwrite.hasLiked(documentId: article.id)
+                debugPrint("📱 ArticlePreviewView: Like status checked - isLiked: \(isLiked)")
+            } catch {
+                debugPrint("📱 ArticlePreviewView: Error checking article like status: \(error)")
+                debugPrint("📱 ArticlePreviewView: Error details - \(String(describing: error))")
+            }
+        }
+    }
+    
+    private func handleLikeAction() {
+        guard !isLoading else {
+            debugPrint("📱 ArticlePreviewView: Like action skipped - already loading")
+            return
+        }
+        
+        debugPrint("📱 ArticlePreviewView: Starting like action for article \(article.id)")
+        debugPrint("📱 ArticlePreviewView: Current state - isLiked: \(isLiked), likeCount: \(likeCount)")
+        isLoading = true
+        
+        Task {
+            do {
+                if isLiked {
+                    debugPrint("📱 ArticlePreviewView: Attempting to unlike article \(article.id)")
+                    try await appwrite.unlike(documentId: article.id, collectionId: AppwriteService.articlesCollectionId)
+                    likeCount -= 1
+                    debugPrint("📱 ArticlePreviewView: Successfully unliked article. New like count: \(likeCount)")
+                } else {
+                    debugPrint("📱 ArticlePreviewView: Attempting to like article \(article.id)")
+                    try await appwrite.like(documentId: article.id, collectionId: AppwriteService.articlesCollectionId)
+                    likeCount += 1
+                    debugPrint("📱 ArticlePreviewView: Successfully liked article. New like count: \(likeCount)")
+                }
+                isLiked.toggle()
+                debugPrint("📱 ArticlePreviewView: Updated isLiked state: \(isLiked)")
+            } catch {
+                debugPrint("📱 ArticlePreviewView: Error handling article like action: \(error)")
+                debugPrint("📱 ArticlePreviewView: Error details - \(String(describing: error))")
+            }
+            isLoading = false
+            debugPrint("📱 ArticlePreviewView: Like action completed")
+        }
     }
 }
 
 struct ArticleDetailView: View {
     let article: Article
     @Environment(\.dismiss) private var dismiss
+    @State private var isLiked = false
+    @State private var likeCount: Int
+    @State private var isLoading = false
+    @State private var commentText = ""
+    @State private var isAddingComment = false
+    @State private var showComments = false
+    @State private var comments: [Comment] = []
+    @State private var errorMessage: String?
+    private let appwrite = AppwriteService.shared
+    
+    init(article: Article) {
+        self.article = article
+        self._likeCount = State(initialValue: article.likes)
+    }
     
     var body: some View {
         NavigationView {
@@ -997,10 +1267,14 @@ struct ArticleDetailView: View {
                         }
                         
                         // Likes
-                        HStack(spacing: 8) {
-                            Image(systemName: "heart")
-                            Text("\(article.likes) likes")
+                        Button(action: handleLikeAction) {
+                            HStack(spacing: 8) {
+                                Image(systemName: isLiked ? "heart.fill" : "heart")
+                                    .foregroundColor(isLiked ? .red : .gray)
+                                Text("\(likeCount) likes")
+                            }
                         }
+                        .disabled(isLoading)
                         
                         // Comments
                         HStack(spacing: 8) {
@@ -1011,6 +1285,70 @@ struct ArticleDetailView: View {
                     .font(.subheadline)
                     .foregroundColor(.gray)
                     .padding(.top, 8)
+                    
+                    // Comments Section
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button(action: {
+                            showComments.toggle()
+                            if showComments {
+                                loadComments()
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: "message")
+                                Text("\(comments.count) Comments")
+                                Spacer()
+                                Image(systemName: showComments ? "chevron.up" : "chevron.down")
+                            }
+                            .foregroundColor(.primary)
+                        }
+                        .padding(.top, 8)
+                        
+                        if showComments {
+                            // Comment Input
+                            HStack {
+                                TextField("Add a comment...", text: $commentText)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .disabled(isAddingComment)
+                                
+                                Button(action: addComment) {
+                                    if isAddingComment {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle())
+                                    } else {
+                                        Text("Post")
+                                            .foregroundColor(commentText.isEmpty ? .gray : .blue)
+                                    }
+                                }
+                                .disabled(commentText.isEmpty || isAddingComment)
+                            }
+                            
+                            if let error = errorMessage {
+                                Text(error)
+                                    .foregroundColor(.red)
+                                    .font(.caption)
+                            }
+                            
+                            // Comments List
+                            ForEach(comments) { comment in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack {
+                                        Text(comment.author)
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                        Spacer()
+                                        Text(comment.createdAt, style: .relative)
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                    }
+                                    Text(comment.text)
+                                        .font(.subheadline)
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
                 }
                 .padding()
             }
@@ -1022,6 +1360,93 @@ struct ArticleDetailView: View {
                     }
                 }
             }
+        }
+        .task {
+            // Check if user has liked the article
+            do {
+                isLiked = try await appwrite.hasLiked(documentId: article.id)
+            } catch {
+                print("📱 Error checking like status: \(error)")
+            }
+        }
+    }
+    
+    private func loadComments() {
+        Task {
+            do {
+                debugPrint("📱 ArticleDetailView: Loading comments for article \(article.id)")
+                comments = try await appwrite.fetchComments(documentId: article.id)
+                debugPrint("📱 ArticleDetailView: Successfully loaded \(comments.count) comments")
+            } catch {
+                debugPrint("📱 ArticleDetailView: Error loading comments: \(error)")
+                errorMessage = "Failed to load comments"
+            }
+        }
+    }
+    
+    private func addComment() {
+        guard !commentText.isEmpty else { return }
+        
+        isAddingComment = true
+        errorMessage = nil
+        
+        Task {
+            do {
+                debugPrint("📱 ArticleDetailView: Adding comment to article \(article.id)")
+                debugPrint("📱 ArticleDetailView: Comment text: \(commentText)")
+                
+                let comment = try await appwrite.createComment(
+                    text: commentText,
+                    documentId: article.id,
+                    collectionId: AppwriteService.articlesCollectionId
+                )
+                
+                debugPrint("📱 ArticleDetailView: Successfully added comment: \(comment)")
+                
+                await MainActor.run {
+                    commentText = ""
+                    comments.insert(comment, at: 0)
+                    isAddingComment = false
+                }
+            } catch {
+                debugPrint("📱 ArticleDetailView: Error adding comment: \(error)")
+                errorMessage = "Failed to add comment"
+                isAddingComment = false
+            }
+        }
+    }
+    
+    private func handleLikeAction() {
+        guard !isLoading else {
+            debugPrint("📱 ArticleDetailView: Like action skipped - already loading")
+            return
+        }
+        
+        debugPrint("📱 ArticleDetailView: Starting like action for article \(article.id)")
+        debugPrint("📱 ArticleDetailView: Current state - isLiked: \(isLiked), likeCount: \(likeCount)")
+        isLoading = true
+        
+        Task {
+            do {
+                if isLiked {
+                    debugPrint("📱 ArticleDetailView: Attempting to unlike article \(article.id)")
+                    try await appwrite.unlike(documentId: article.id, collectionId: AppwriteService.articlesCollectionId)
+                    likeCount -= 1
+                    debugPrint("📱 ArticleDetailView: Successfully unliked article. New like count: \(likeCount)")
+                } else {
+                    debugPrint("📱 ArticleDetailView: Attempting to like article \(article.id)")
+                    try await appwrite.like(documentId: article.id, collectionId: AppwriteService.articlesCollectionId)
+                    likeCount += 1
+                    debugPrint("📱 ArticleDetailView: Successfully liked article. New like count: \(likeCount)")
+                }
+                isLiked.toggle()
+                debugPrint("📱 ArticleDetailView: Updated isLiked state: \(isLiked)")
+            } catch {
+                debugPrint("📱 ArticleDetailView: Error handling article like action: \(error)")
+                debugPrint("📱 ArticleDetailView: Error details - \(String(describing: error))")
+            }
+            isLoading = false
+            debugPrint("📱 ArticleDetailView: Like action completed")
         }
     }
 }
@@ -1177,10 +1602,10 @@ struct HomeView: View {
             
             // Create Tab
             CreateView()
-            .tabItem {
-                Image(systemName: "plus.square.fill")
-                Text("Create")
-            }
+                .tabItem {
+                    Image(systemName: "plus.square.fill")
+                    Text("Create")
+                }
             
             // Notifications Tab
             VStack(spacing: 20) {

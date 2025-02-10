@@ -12,6 +12,7 @@ struct Article: Codable, Identifiable {
     let updatedAt: Date
     let likes: Int
     let views: Int
+    let comments: Int
     
     enum CodingKeys: String, CodingKey {
         case id = "$id"
@@ -25,6 +26,7 @@ struct Article: Codable, Identifiable {
         case updatedAt
         case likes
         case views
+        case comments
     }
     
     init(from decoder: Decoder) throws {
@@ -38,6 +40,7 @@ struct Article: Codable, Identifiable {
         tags = try container.decode([String].self, forKey: .tags)
         likes = try container.decode(Int.self, forKey: .likes)
         views = try container.decode(Int.self, forKey: .views)
+        comments = try container.decode(Int.self, forKey: .comments)
         
         // Handle ISO 8601 date format from Appwrite
         if let dateString = try container.decodeIfPresent(String.self, forKey: .createdAt) {
@@ -63,7 +66,7 @@ struct Article: Codable, Identifiable {
         }
     }
     
-    init(id: String, userId: String, author: String, title: String, content: String, coverImageId: String?, tags: [String], createdAt: Date, updatedAt: Date, likes: Int, views: Int) {
+    init(id: String, userId: String, author: String, title: String, content: String, coverImageId: String?, tags: [String], createdAt: Date, updatedAt: Date, likes: Int, views: Int, comments: Int = 0) {
         self.id = id
         self.userId = userId
         self.author = author
@@ -75,5 +78,6 @@ struct Article: Codable, Identifiable {
         self.updatedAt = updatedAt
         self.likes = likes
         self.views = views
+        self.comments = comments
     }
 } 

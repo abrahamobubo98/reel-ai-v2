@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		E709E7522D55C2A8005E3DD8 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = E709E7512D55C2A8005E3DD8 /* MarkdownUI */; };
-		E7F1F5D22D52BE97009B3191 /* Appwrite in Frameworks */ = {isa = PBXBuildFile; productRef = E7F1F5D12D52BE97009B3191 /* Appwrite */; };
+		E7C820142D5A9B43000392F2 /* Appwrite in Frameworks */ = {isa = PBXBuildFile; productRef = E7C820132D5A9B43000392F2 /* Appwrite */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -70,7 +70,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E7F1F5D22D52BE97009B3191 /* Appwrite in Frameworks */,
+				E7C820142D5A9B43000392F2 /* Appwrite in Frameworks */,
 				E709E7522D55C2A8005E3DD8 /* MarkdownUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -132,8 +132,8 @@
 			);
 			name = "reel-ai-v2";
 			packageProductDependencies = (
-				E7F1F5D12D52BE97009B3191 /* Appwrite */,
 				E709E7512D55C2A8005E3DD8 /* MarkdownUI */,
+				E7C820132D5A9B43000392F2 /* Appwrite */,
 			);
 			productName = "reel-ai-v2";
 			productReference = E7F1F5992D52608B009B3191 /* reel-ai-v2.app */;
@@ -218,8 +218,8 @@
 			mainGroup = E7F1F5902D52608B009B3191;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				E7F1F5D02D52BE97009B3191 /* XCRemoteSwiftPackageReference "sdk-for-apple" */,
 				E709E7502D55C112005E3DD8 /* XCRemoteSwiftPackageReference "MarkdownUI" */,
+				E7C820122D5A9B43000392F2 /* XCRemoteSwiftPackageReference "sdk-for-apple" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E7F1F59A2D52608B009B3191 /* Products */;
@@ -598,12 +598,11 @@
 				minimumVersion = 2.4.1;
 			};
 		};
-		E7F1F5D02D52BE97009B3191 /* XCRemoteSwiftPackageReference "sdk-for-apple" */ = {
+		E7C820122D5A9B43000392F2 /* XCRemoteSwiftPackageReference "sdk-for-apple" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/appwrite/sdk-for-apple";
 			requirement = {
-				kind = versionRange;
-				maximumVersion = 9.0.0;
+				kind = upToNextMajorVersion;
 				minimumVersion = 8.0.0;
 			};
 		};
@@ -615,9 +614,9 @@
 			package = E709E7502D55C112005E3DD8 /* XCRemoteSwiftPackageReference "MarkdownUI" */;
 			productName = MarkdownUI;
 		};
-		E7F1F5D12D52BE97009B3191 /* Appwrite */ = {
+		E7C820132D5A9B43000392F2 /* Appwrite */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = E7F1F5D02D52BE97009B3191 /* XCRemoteSwiftPackageReference "sdk-for-apple" */;
+			package = E7C820122D5A9B43000392F2 /* XCRemoteSwiftPackageReference "sdk-for-apple" */;
 			productName = Appwrite;
 		};
 /* End XCSwiftPackageProductDependency section */
