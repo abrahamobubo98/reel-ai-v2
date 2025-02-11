@@ -98,15 +98,19 @@ struct Post: Codable, Identifiable {
     let caption: String
     let externalLink: String
     let createdAt: Date
+    let updatedAt: Date
+    let category: String
+    let collaborators: [String]
     let likes: Int
     let comments: Int
+    let sharesCount: Int
     
     enum MediaType: String, Codable {
         case photo
         case video
     }
     
-    init(id: String, userId: String, author: String, mediaId: String, mediaType: MediaType = .photo, caption: String, externalLink: String = "", createdAt: Date, likes: Int, comments: Int) {
+    init(id: String, userId: String, author: String, mediaId: String, mediaType: MediaType = .photo, caption: String, externalLink: String = "", createdAt: Date, updatedAt: Date = Date(), category: String = "", collaborators: [String] = [], likes: Int = 0, comments: Int = 0, sharesCount: Int = 0) {
         self.id = id
         self.userId = userId
         self.author = author
@@ -115,8 +119,12 @@ struct Post: Codable, Identifiable {
         self.caption = caption
         self.externalLink = externalLink
         self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.category = category
+        self.collaborators = collaborators
         self.likes = likes
         self.comments = comments
+        self.sharesCount = sharesCount
     }
     
     enum CodingKeys: String, CodingKey {
@@ -128,8 +136,12 @@ struct Post: Codable, Identifiable {
         case caption
         case externalLink
         case createdAt
+        case updatedAt
+        case category
+        case collaborators
         case likes
         case comments
+        case sharesCount
     }
     
     init(from decoder: Decoder) throws {
@@ -141,8 +153,12 @@ struct Post: Codable, Identifiable {
         mediaType = try container.decode(MediaType.self, forKey: .mediaType)
         caption = try container.decode(String.self, forKey: .caption)
         externalLink = try container.decode(String.self, forKey: .externalLink)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        category = try container.decode(String.self, forKey: .category)
+        collaborators = try container.decode([String].self, forKey: .collaborators)
         likes = try container.decode(Int.self, forKey: .likes)
         comments = try container.decode(Int.self, forKey: .comments)
+        sharesCount = try container.decode(Int.self, forKey: .sharesCount)
         
         // Handle ISO 8601 date format from Appwrite
         if let dateString = try container.decodeIfPresent(String.self, forKey: .createdAt) {
@@ -175,6 +191,9 @@ class AppwriteService {
     static let articlesCollectionId = "67a58f8d001dcc4329a6"
     static let likesCollectionId = "67a7e4cf0036cba3a09d"
     static let commentsCollectionId = "67aa3e110013042f9ed2"
+    
+    // Database ID
+    static let databaseId = "67a3d388001df90d84c0"
     
     var client: Client
     var account: Account
@@ -218,11 +237,11 @@ class AppwriteService {
     func fetchPosts(limit: Int = 10, offset: Int = 0) async throws -> [Post] {
         do {
             debugPrint("📱 Fetching posts with limit: \(limit), offset: \(offset)")
-            debugPrint("📱 Using database ID: \(Constants.databaseId)")
+            debugPrint("📱 Using database ID: \(AppwriteService.databaseId)")
             debugPrint("📱 Using collection ID: \(Self.postsCollectionId)")
             
             let documents = try await databases.listDocuments(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: Self.postsCollectionId,
                 queries: [
                     Query.orderDesc("createdAt"),
@@ -232,35 +251,39 @@ class AppwriteService {
             )
             
             debugPrint("📱 Raw response - total documents: \(documents.total)")
-            debugPrint("📱 Raw documents data: \(documents.documents)")
-            
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             
             var posts: [Post] = []
             for document in documents.documents {
-                let data = document.data
-                debugPrint("📱 Parsing document: \(document.id)")
+                debugPrint("📱 Processing document: \(document.id)")
+                debugPrint("📱 Document data: \(document.data)")
                 
-                // Extract values from AnyCodable
-                let userId = (data["userId"]?.value as? String) ?? ""
-                let author = (data["author"]?.value as? String) ?? "Unknown User"
-                let mediaId = (data["mediaId"]?.value as? String) ?? ""
-                let caption = (data["caption"]?.value as? String) ?? ""
-                let dateString = (data["createdAt"]?.value as? String) ?? ""
-                let likes = (data["likes"]?.value as? Int) ?? 0
-                let comments = (data["comments"]?.value as? Int) ?? 0
-                let mediaTypeString = (data["mediaType"]?.value as? String) ?? "photo"
+                // Extract values from AnyCodable with detailed logging
+                let userId = (document.data["userId"]?.value as? String) ?? ""
+                let author = (document.data["author"]?.value as? String) ?? "Unknown User"
+                let mediaId = (document.data["mediaId"]?.value as? String) ?? ""
+                let caption = (document.data["caption"]?.value as? String) ?? ""
+                let dateString = (document.data["createdAt"]?.value as? String) ?? ""
+                let updatedDateString = (document.data["updatedAt"]?.value as? String) ?? dateString
+                let category = (document.data["category"]?.value as? String) ?? ""
+                let collaborators = (document.data["collaborators"]?.value as? [String]) ?? []
+                let likes = (document.data["likes"]?.value as? Int) ?? 0
+                let comments = (document.data["comments"]?.value as? Int) ?? 0
+                let sharesCount = (document.data["sharesCount"]?.value as? Int) ?? 0
+                let mediaTypeString = (document.data["mediaType"]?.value as? String) ?? "photo"
                 
-                guard !userId.isEmpty, !mediaId.isEmpty, !dateString.isEmpty else {
-                    debugPrint("📱 Missing required fields in document: \(document.id)")
+                debugPrint("📱 Extracted fields - userId: \(userId), mediaId: \(mediaId), dateString: \(dateString)")
+                
+                // Skip documents that don't have required fields
+                guard !mediaId.isEmpty else {
+                    debugPrint("📱 Skipping document \(document.id) - missing mediaId")
                     continue
                 }
                 
-                guard let date = formatter.date(from: dateString) else {
-                    debugPrint("📱 Failed to parse date: \(dateString)")
-                    continue
-                }
+                // Create post with all fields
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                let date = formatter.date(from: dateString) ?? Date()
+                let updatedDate = formatter.date(from: updatedDateString) ?? date
                 
                 let post = Post(
                     id: document.id,
@@ -269,12 +292,17 @@ class AppwriteService {
                     mediaId: mediaId,
                     mediaType: Post.MediaType(rawValue: mediaTypeString) ?? .photo,
                     caption: caption,
-                    externalLink: "",
+                    externalLink: (document.data["externalLink"]?.value as? String) ?? "",
                     createdAt: date,
+                    updatedAt: updatedDate,
+                    category: category,
+                    collaborators: collaborators,
                     likes: likes,
-                    comments: comments
+                    comments: comments,
+                    sharesCount: sharesCount
                 )
                 
+                debugPrint("📱 Successfully created post: \(post.id)")
                 posts.append(post)
             }
             
@@ -305,10 +333,10 @@ class AppwriteService {
             let dateString = formatter.string(from: Date())
             debugPrint("📱 Created date string: \(dateString)")
             
-            // Create post document
+            // Create post document with all required fields
             debugPrint("📱 Attempting to create document with mediaId: \(mediaId)")
             let document = try await databases.createDocument(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: Self.postsCollectionId,
                 documentId: ID.unique(),
                 data: [
@@ -319,8 +347,12 @@ class AppwriteService {
                     "caption": caption,
                     "externalLink": externalLink,
                     "createdAt": dateString,
+                    "updatedAt": dateString,
                     "likes": 0,
-                    "comments": 0
+                    "comments": 0,
+                    "category": "",
+                    "collaborators": [],
+                    "sharesCount": 0
                 ]
             )
             debugPrint("📱 Document created successfully with ID: \(document.id)")
@@ -335,8 +367,12 @@ class AppwriteService {
                 caption: document.data["caption"]?.value as? String ?? caption,
                 externalLink: document.data["externalLink"]?.value as? String ?? externalLink,
                 createdAt: formatter.date(from: document.data["createdAt"]?.value as? String ?? dateString) ?? Date(),
+                updatedAt: formatter.date(from: document.data["updatedAt"]?.value as? String ?? dateString) ?? Date(),
+                category: document.data["category"]?.value as? String ?? "",
+                collaborators: document.data["collaborators"]?.value as? [String] ?? [],
                 likes: document.data["likes"]?.value as? Int ?? 0,
-                comments: document.data["comments"]?.value as? Int ?? 0
+                comments: document.data["comments"]?.value as? Int ?? 0,
+                sharesCount: document.data["sharesCount"]?.value as? Int ?? 0
             )
             
             debugPrint("📱 Post object created successfully: \(post)")
@@ -362,7 +398,7 @@ class AppwriteService {
     func createArticle(title: String, content: String, coverImageId: String? = nil, tags: [String] = []) async throws -> Article {
         do {
             print("📱 AppwriteService: Starting article creation")
-            print("📱 AppwriteService: Using database ID: \(Constants.databaseId)")
+            print("📱 AppwriteService: Using database ID: \(AppwriteService.databaseId)")
             print("📱 AppwriteService: Using collection ID: \(Self.articlesCollectionId)")
             
             // Get current user
@@ -378,7 +414,7 @@ class AppwriteService {
             // Create article document
             print("📱 AppwriteService: Attempting to create article document")
             let document = try await databases.createDocument(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: Self.articlesCollectionId,
                 documentId: ID.unique(),
                 data: [
@@ -435,7 +471,7 @@ class AppwriteService {
             debugPrint("📱 Fetching articles with limit: \(limit), offset: \(offset)")
             
             let documents = try await databases.listDocuments(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: Self.articlesCollectionId,
                 queries: [
                     Query.orderDesc("createdAt"),
@@ -485,7 +521,7 @@ class AppwriteService {
             let updateDateString = formatter.string(from: Date())
             
             let document = try await databases.updateDocument(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: Self.articlesCollectionId,
                 documentId: article.id,
                 data: [
@@ -711,7 +747,7 @@ class AppwriteService {
         
         do {
             let document = try await databases.getDocument(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: Constants.usersCollectionId,
                 documentId: userId
             )
@@ -749,7 +785,7 @@ class AppwriteService {
             // First, get current likes count
             debugPrint("📱 Like: Fetching current document")
             let document = try await databases.getDocument(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: collectionId,
                 documentId: documentId
             )
@@ -760,7 +796,7 @@ class AppwriteService {
             // Then increment likes count
             debugPrint("📱 Like: Updating likes count to \(currentLikes + 1)")
             _ = try await databases.updateDocument(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: collectionId,
                 documentId: documentId,
                 data: [
@@ -772,7 +808,7 @@ class AppwriteService {
             // Check if a like record already exists
             debugPrint("📱 Like: Checking for existing like record")
             let likes = try await databases.listDocuments(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: Self.likesCollectionId,
                 queries: [
                     Query.equal("userId", value: user.id),
@@ -797,7 +833,7 @@ class AppwriteService {
                 if !updateData.isEmpty {
                     debugPrint("📱 Like: Updating existing record with data: \(updateData)")
                     _ = try await databases.updateDocument(
-                        databaseId: Constants.databaseId,
+                        databaseId: AppwriteService.databaseId,
                         collectionId: Self.likesCollectionId,
                         documentId: existingLike.id,
                         data: updateData
@@ -820,7 +856,7 @@ class AppwriteService {
                 // Check if isLiked field exists in schema
                 debugPrint("📱 Like: Checking if isLiked field exists in schema")
                 if let existingDoc = try? await databases.listDocuments(
-                    databaseId: Constants.databaseId,
+                    databaseId: AppwriteService.databaseId,
                     collectionId: Self.likesCollectionId,
                     queries: []
                 ).documents.first {
@@ -834,7 +870,7 @@ class AppwriteService {
                 
                 debugPrint("📱 Like: Creating new record with data: \(createData)")
                 _ = try await databases.createDocument(
-                    databaseId: Constants.databaseId,
+                    databaseId: AppwriteService.databaseId,
                     collectionId: Self.likesCollectionId,
                     documentId: likeId,
                     data: createData
@@ -865,7 +901,7 @@ class AppwriteService {
             // First, get current likes count
             debugPrint("📱 Unlike: Fetching current document")
             let document = try await databases.getDocument(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: collectionId,
                 documentId: documentId
             )
@@ -877,7 +913,7 @@ class AppwriteService {
             // Then decrement likes count
             debugPrint("📱 Unlike: Updating likes count")
             _ = try await databases.updateDocument(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: collectionId,
                 documentId: documentId,
                 data: [
@@ -889,7 +925,7 @@ class AppwriteService {
             // Find and update the like record
             debugPrint("📱 Unlike: Finding like record")
             let likes = try await databases.listDocuments(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: Self.likesCollectionId,
                 queries: [
                     Query.equal("userId", value: user.id),
@@ -912,7 +948,7 @@ class AppwriteService {
                 if !updateData.isEmpty {
                     debugPrint("📱 Unlike: Updating record with data: \(updateData)")
                     _ = try await databases.updateDocument(
-                        databaseId: Constants.databaseId,
+                        databaseId: AppwriteService.databaseId,
                         collectionId: Self.likesCollectionId,
                         documentId: likeDoc.id,
                         data: updateData
@@ -954,7 +990,7 @@ class AppwriteService {
             // Check if isLiked field exists in schema
             debugPrint("📱 HasLiked: Checking if isLiked field exists in schema")
             if let existingDoc = try? await databases.listDocuments(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: Self.likesCollectionId,
                 queries: []
             ).documents.first {
@@ -968,7 +1004,7 @@ class AppwriteService {
             
             debugPrint("📱 HasLiked: Executing query with conditions: \(queries)")
             let likes = try await databases.listDocuments(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: Self.likesCollectionId,
                 queries: queries
             )
@@ -1010,7 +1046,7 @@ class AppwriteService {
             
             debugPrint("📱 CreateComment: Creating comment document")
             let document = try await databases.createDocument(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: Self.commentsCollectionId,
                 documentId: commentId,
                 data: [
@@ -1026,7 +1062,7 @@ class AppwriteService {
             // Increment comments count on the parent document
             debugPrint("📱 CreateComment: Updating comments count on parent document")
             let parentDoc = try await databases.getDocument(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: collectionId,
                 documentId: documentId
             )
@@ -1035,7 +1071,7 @@ class AppwriteService {
             debugPrint("📱 CreateComment: Current comments count: \(currentComments)")
             
             _ = try await databases.updateDocument(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: collectionId,
                 documentId: documentId,
                 data: [
@@ -1074,7 +1110,7 @@ class AppwriteService {
         
         do {
             let documents = try await databases.listDocuments(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: Self.commentsCollectionId,
                 queries: [
                     Query.equal("documentId", value: documentId),
@@ -1102,7 +1138,7 @@ class AppwriteService {
                 
                 guard let date = formatter.date(from: dateString) else {
                     debugPrint("📱 FetchComments: Failed to parse date string: \(dateString)")
-                    return nil
+                    return nil as Comment?
                 }
                 
                 debugPrint("📱 FetchComments: Successfully parsed date: \(date)")
@@ -1142,7 +1178,7 @@ class AppwriteService {
         do {
             // First verify the comment belongs to the user
             let comment = try await databases.getDocument(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: Self.commentsCollectionId,
                 documentId: commentId
             )
@@ -1156,7 +1192,7 @@ class AppwriteService {
             // Delete the comment
             debugPrint("📱 DeleteComment: Deleting comment document")
             _ = try await databases.deleteDocument(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: Self.commentsCollectionId,
                 documentId: commentId
             )
@@ -1164,7 +1200,7 @@ class AppwriteService {
             // Decrement comments count on the parent document
             debugPrint("📱 DeleteComment: Updating comments count on parent document")
             let parentDoc = try await databases.getDocument(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: collectionId,
                 documentId: documentId
             )
@@ -1173,7 +1209,7 @@ class AppwriteService {
             debugPrint("📱 DeleteComment: Current comments count: \(currentComments)")
             
             _ = try await databases.updateDocument(
-                databaseId: Constants.databaseId,
+                databaseId: AppwriteService.databaseId,
                 collectionId: collectionId,
                 documentId: documentId,
                 data: [

@@ -277,11 +277,15 @@ struct CreateView: View {
                     )
                     .onAppear {
                         if let videoURL = viewModel.model.videoURL {
-                            videoPlayer.setVideo(url: videoURL)
+                            Task { @MainActor in
+                                videoPlayer.setVideo(url: videoURL)
+                            }
                         }
                     }
                     .onDisappear {
-                        videoPlayer.cleanup()
+                        Task { @MainActor in
+                            videoPlayer.cleanup()
+                        }
                     }
                     
                     // Upload Progress
@@ -408,28 +412,44 @@ struct CreateView: View {
         .sheet(isPresented: $showArticleEditor) {
             ArticleEditorView()
         }
-        .onChange(of: viewModel.model.shouldDismiss) { shouldDismiss in
-            if shouldDismiss {
+        .onChange(of: viewModel.model.shouldDismiss) { oldValue, newValue in
+            if newValue {
+                Task { @MainActor in
+                    videoPlayer.cleanup()
+                }
                 presentationMode.wrappedValue.dismiss()
             }
         }
-        .onChange(of: viewModel.model.isUploading) { isUploading in
-            if isUploading {
+        .onChange(of: viewModel.model.isUploading) { oldValue, newValue in
+            if newValue {
                 videoPlayer.pause()
             }
         }
     }
 }
 
-class VideoPlayerManager: ObservableObject, @unchecked Sendable {
+@MainActor
+class VideoPlayerManager: ObservableObject {
     @Published var player: AVPlayer
     @Published var isLoading = false
     private var playerItem: AVPlayerItem?
     private var timeObserver: Any?
     private var assetResourceLoader: AVAssetResourceLoader?
+    private var cleanupObserver: NSObjectProtocol?
     
     init() {
         self.player = AVPlayer()
+        
+        // Add observer for cleanup notification
+        cleanupObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CleanupMediaResources"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.cleanup()
+            }
+        }
     }
     
     func setVideo(url: URL) {
@@ -447,51 +467,32 @@ class VideoPlayerManager: ObservableObject, @unchecked Sendable {
         // Configure resource loader for better streaming
         assetResourceLoader = asset.resourceLoader
         
-        // Load asset asynchronously
-        Task { @MainActor in
-            do {
-                // Load essential properties first
-                let keys = ["playable", "duration", "tracks"]
-                for key in keys {
-                    asset.loadValuesAsynchronously(forKeys: [key])
-                }
-                
-                // Check for playable status
-                var error: NSError?
-                let status = asset.statusOfValue(forKey: "playable", error: &error)
-                if status == .failed {
-                    throw error ?? NSError(domain: "VideoPlayer", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to load asset"])
-                }
-                
-                // Create player item with optimized settings
-                let item = AVPlayerItem(asset: asset)
-                item.preferredForwardBufferDuration = 2
-                item.preferredMaximumResolution = CGSize(width: 640, height: 640) // Limit resolution for preview
-                
-                // Configure item for better memory usage
-                item.automaticallyPreservesTimeOffsetFromLive = false
-                item.preferredForwardBufferDuration = 2
-                item.canUseNetworkResourcesForLiveStreamingWhilePaused = false
-                
-                // Set up time observer
-                timeObserver = player.addPeriodicTimeObserver(
-                    forInterval: CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC)),
-                    queue: .main
-                ) { [weak self] _ in
-                    if self?.player.currentTime() == self?.player.currentItem?.duration {
-                        self?.cleanup()
-                    }
-                }
-                
-                self.playerItem = item
-                self.player.replaceCurrentItem(with: item)
-                self.isLoading = false
-                
-            } catch {
-                print("📱 Error loading video asset: \(error)")
-                self.isLoading = false
+        // Create player item with optimized settings
+        let item = AVPlayerItem(asset: asset)
+        item.preferredForwardBufferDuration = 2
+        item.preferredMaximumResolution = CGSize(width: 640, height: 640) // Limit resolution for preview
+        
+        // Configure item for better memory usage
+        item.automaticallyPreservesTimeOffsetFromLive = false
+        item.preferredForwardBufferDuration = 2
+        item.canUseNetworkResourcesForLiveStreamingWhilePaused = false
+        
+        // Set up time observer
+        timeObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC)),
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self,
+                      let duration = self.player.currentItem?.duration,
+                      self.player.currentTime() == duration else { return }
+                self.cleanup()
             }
         }
+        
+        self.playerItem = item
+        self.player.replaceCurrentItem(with: item)
+        self.isLoading = false
     }
     
     func pause() {
@@ -511,10 +512,27 @@ class VideoPlayerManager: ObservableObject, @unchecked Sendable {
         player.replaceCurrentItem(with: nil)
         assetResourceLoader = nil
         isLoading = false
+        
+        // Remove notification observer if it exists
+        if let observer = cleanupObserver {
+            NotificationCenter.default.removeObserver(observer)
+            cleanupObserver = nil
+        }
     }
     
     deinit {
-        cleanup()
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            self.player.pause()
+            if let observer = self.timeObserver {
+                self.player.removeTimeObserver(observer)
+            }
+            if let observer = self.cleanupObserver {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            self.playerItem?.cancelPendingSeeks()
+            self.player.replaceCurrentItem(with: nil)
+        }
     }
 }
 
@@ -545,7 +563,7 @@ class ArticleEditorViewModel: ObservableObject {
             print("📱 ArticleEditorViewModel: Error - Empty content")
             return
         }
-        
+
         isLoading = true
         error = nil
         

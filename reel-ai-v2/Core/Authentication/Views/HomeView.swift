@@ -162,7 +162,7 @@ class VideoThumbnailLoader: ObservableObject {
         
         isLoading = true
         print("📱 VideoThumbnailLoader: Creating AVAsset")
-        let asset = AVAsset(url: url)
+        let asset = AVURLAsset(url: url)
         let imageGenerator = AVAssetImageGenerator(asset: asset)
         imageGenerator.appliesPreferredTrackTransform = true
         imageGenerator.maximumSize = CGSize(width: 400, height: 400)
@@ -514,6 +514,7 @@ struct SettingsView: View {
     @ObservedObject var viewModel: AuthenticationViewModel
     @State private var selectedTab = 0
     @StateObject private var homeViewModel = HomeViewModel()
+    @State private var showEditProfile = false
     
     var body: some View {
         ScrollView {
@@ -594,7 +595,7 @@ struct SettingsView: View {
                     // Profile Action Buttons
                     HStack(spacing: 12) {
                         Button(action: {
-                            // Edit profile functionality will go here
+                            showEditProfile = true
                         }) {
                             HStack {
                                 Image(systemName: "pencil")
@@ -605,6 +606,9 @@ struct SettingsView: View {
                             .background(Color(.systemGray6))
                             .foregroundColor(.primary)
                             .cornerRadius(8)
+                        }
+                        .sheet(isPresented: $showEditProfile) {
+                            EditProfileView(viewModel: viewModel)
                         }
                         
                         Button(action: {
@@ -1463,6 +1467,77 @@ struct ClassesTabView: View {
     }
 }
 
+struct EditProfileView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var viewModel: AuthenticationViewModel
+    @State private var name: String
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+    
+    init(viewModel: AuthenticationViewModel) {
+        self.viewModel = viewModel
+        _name = State(initialValue: viewModel.name)
+    }
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Profile Information")) {
+                    TextField("Name", text: $name)
+                }
+                
+                if let error = errorMessage {
+                    Section {
+                        Text(error)
+                            .foregroundColor(.red)
+                    }
+                }
+            }
+            .navigationTitle("Edit Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        saveProfile()
+                    }
+                    .disabled(isLoading)
+                }
+            }
+            .overlay {
+                if isLoading {
+                    ProgressView()
+                }
+            }
+        }
+    }
+    
+    private func saveProfile() {
+        isLoading = true
+        errorMessage = nil
+        
+        Task {
+            do {
+                try await viewModel.updateProfile(name: name)
+                await MainActor.run {
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                }
+            }
+            await MainActor.run {
+                isLoading = false
+            }
+        }
+    }
+}
+
 struct HomeView: View {
     @ObservedObject var viewModel: AuthenticationViewModel
     @StateObject private var homeViewModel = HomeViewModel()
@@ -1566,7 +1641,7 @@ struct HomeView: View {
                     }
                 }
             }
-            .onChange(of: selectedFeed) { newValue in
+            .onChange(of: selectedFeed) { oldValue, newValue in
                 if newValue == .posts {
                     homeViewModel.loadPosts()
                 } else {

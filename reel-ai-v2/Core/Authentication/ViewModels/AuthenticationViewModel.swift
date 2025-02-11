@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import SwiftUI
+import Appwrite
 
 @MainActor
 class AuthenticationViewModel: ObservableObject {
@@ -125,12 +126,54 @@ class AuthenticationViewModel: ObservableObject {
         defer { isLoading = false }
         
         do {
+            // First clear all fields and reset state
+            clearFields()
+            
+            // Clean up any media resources
+            NotificationCenter.default.post(name: NSNotification.Name("CleanupMediaResources"), object: nil)
+            
+            // Perform logout
             try await appwrite.logout()
+            
+            // Reset authentication state
+            model.authState = .signIn
             isAuthenticated = false
+            
+            #if DEBUG
+            prefillCredentials()
+            #endif
         } catch {
             showError = true
             errorMessage = (error as NSError).localizedDescription
             debugPrint("📱 Sign out error: \(error)")
+        }
+    }
+    
+    func updateProfile(name: String) async throws {
+        debugPrint("📱 UpdateProfile: Starting profile update - name: \(name)")
+        isLoading = true
+        defer { 
+            debugPrint("📱 UpdateProfile: Completed profile update process")
+            isLoading = false 
+        }
+        
+        do {
+            debugPrint("📱 UpdateProfile: Attempting to update name in Appwrite account")
+            let _ = try await appwrite.account.updateName(name: name)
+            debugPrint("📱 UpdateProfile: Successfully updated name in Appwrite account")
+            
+            debugPrint("📱 UpdateProfile: Updating local state on MainActor")
+            await MainActor.run {
+                self.name = name
+                debugPrint("📱 UpdateProfile: Successfully updated local state")
+            }
+        } catch {
+            debugPrint("📱 UpdateProfile: Error occurred: \(error.localizedDescription)")
+            if let appwriteError = error as? AppwriteError {
+                debugPrint("📱 UpdateProfile: Appwrite error type: \(String(describing: appwriteError.type))")
+                debugPrint("📱 UpdateProfile: Appwrite error message: \(String(describing: appwriteError.message))")
+            }
+            throw error
         }
     }
 } 
