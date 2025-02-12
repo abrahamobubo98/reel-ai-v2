@@ -104,21 +104,6 @@ class AppwriteService {
     private var userCache: [String: UserInfo] = [:]
     
     private init() {
-        // Debug logging for configuration
-        print("📱 Checking configuration:")
-        print("APPWRITE_ENDPOINT: \(Constants.endpoint.isEmpty ? "MISSING" : "PRESENT")")
-        print("APPWRITE_PROJECT_ID: \(Constants.projectId.isEmpty ? "MISSING" : "PRESENT")")
-        print("APPWRITE_API_KEY: \(Constants.apiKey.isEmpty ? "MISSING" : "PRESENT")")
-        print("APPWRITE_DATABASE_ID: \(Constants.databaseId.isEmpty ? "MISSING" : "PRESENT")")
-        print("APPWRITE_POST_MEDIA_BUCKET_ID: \(Constants.postMediaBucketId.isEmpty ? "MISSING" : "PRESENT")")
-        print("APPWRITE_POSTS_COLLECTION_ID: \(Self.postsCollectionId.isEmpty ? "MISSING" : "PRESENT")")
-        print("APPWRITE_ARTICLES_COLLECTION_ID: \(Self.articlesCollectionId.isEmpty ? "MISSING" : "PRESENT")")
-        print("APPWRITE_LIKES_COLLECTION_ID: \(Self.likesCollectionId.isEmpty ? "MISSING" : "PRESENT")")
-        print("APPWRITE_COMMENTS_COLLECTION_ID: \(Self.commentsCollectionId.isEmpty ? "MISSING" : "PRESENT")")
-        print("APPWRITE_USERS_COLLECTION_ID: \(Constants.usersCollectionId.isEmpty ? "MISSING" : "PRESENT")")
-        print("APPWRITE_STORAGE_ID: \(Constants.storageId.isEmpty ? "MISSING" : "PRESENT")")
-        print("APPWRITE_BUCKET_ID: \(Constants.bucketId.isEmpty ? "MISSING" : "PRESENT")")
-        
         // Validate configuration
         guard !Constants.endpoint.isEmpty else {
             fatalError("Appwrite endpoint not configured")
@@ -172,10 +157,6 @@ class AppwriteService {
     /// Fetches posts with pagination, sorted by creation date
     func fetchPosts(limit: Int = 10, offset: Int = 0) async throws -> [Post] {
         do {
-            debugPrint("📱 Fetching posts with limit: \(limit), offset: \(offset)")
-            debugPrint("📱 Using database ID: \(AppwriteService.databaseId)")
-            debugPrint("📱 Using collection ID: \(Self.postsCollectionId)")
-            
             let documents = try await databases.listDocuments(
                 databaseId: AppwriteService.databaseId,
                 collectionId: Self.postsCollectionId,
@@ -186,14 +167,8 @@ class AppwriteService {
                 ]
             )
             
-            debugPrint("📱 Raw response - total documents: \(documents.total)")
-            
             var posts: [Post] = []
             for document in documents.documents {
-                debugPrint("📱 Processing document: \(document.id)")
-                debugPrint("📱 Document data: \(document.data)")
-                
-                // Extract values from AnyCodable with detailed logging
                 let userId = (document.data["userId"]?.value as? String) ?? ""
                 let author = (document.data["author"]?.value as? String) ?? "Unknown User"
                 let mediaId = (document.data["mediaId"]?.value as? String) ?? ""
@@ -203,15 +178,8 @@ class AppwriteService {
                 let comments = (document.data["comments"]?.value as? Int) ?? 0
                 let mediaTypeString = (document.data["mediaType"]?.value as? String) ?? "photo"
                 
-                debugPrint("📱 Extracted fields - userId: \(userId), mediaId: \(mediaId), dateString: \(dateString)")
+                guard !mediaId.isEmpty else { continue }
                 
-                // Skip documents that don't have required fields
-                guard !mediaId.isEmpty else {
-                    debugPrint("📱 Skipping document \(document.id) - missing mediaId")
-                    continue
-                }
-                
-                // Create post with all fields
                 let formatter = ISO8601DateFormatter()
                 formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
                 let date = formatter.date(from: dateString) ?? Date()
@@ -228,18 +196,14 @@ class AppwriteService {
                     createdAt: date
                 )
                 
-                debugPrint("📱 Successfully created post: \(post.id)")
                 posts.append(post)
             }
             
-            debugPrint("📱 Successfully parsed \(posts.count) posts")
             return posts
             
         } catch let error as AppwriteError {
-            debugPrint("📱 Appwrite error fetching posts: \(String(describing: error.type)) - \(String(describing: error.message))")
             throw DatabaseError.creationFailed("Appwrite error: \(String(describing: error.message))")
         } catch {
-            debugPrint("📱 Unexpected error fetching posts: \(error)")
             throw DatabaseError.creationFailed(error.localizedDescription)
         }
     }
@@ -247,20 +211,15 @@ class AppwriteService {
     /// Creates a new post in the database
     func createPost(mediaId: String, caption: String, mediaType: MediaType = .image, externalLink: String = "") async throws -> Post {
         do {
-            debugPrint("📱 Starting post creation process...")
-            
             // Get current user
             let user = try await account.get()
-            debugPrint("📱 Got user: \(user.id)")
             
             // Create ISO 8601 date string
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             let dateString = formatter.string(from: Date())
-            debugPrint("📱 Created date string: \(dateString)")
             
             // Create post document with all required fields
-            debugPrint("📱 Attempting to create document with mediaId: \(mediaId)")
             let document = try await databases.createDocument(
                 databaseId: AppwriteService.databaseId,
                 collectionId: Self.postsCollectionId,
@@ -275,13 +234,9 @@ class AppwriteService {
                     "createdAt": dateString,
                     "updatedAt": dateString,
                     "likes": 0,
-                    "comments": 0,
-                    "category": "",
-                    "collaborators": [],
-                    "sharesCount": 0
+                    "comments": 0
                 ]
             )
-            debugPrint("📱 Document created successfully with ID: \(document.id)")
             
             // Create Post object from document data
             let post = Post(
@@ -296,11 +251,9 @@ class AppwriteService {
                 createdAt: formatter.date(from: document.data["createdAt"]?.value as? String ?? dateString) ?? Date()
             )
             
-            debugPrint("📱 Post object created successfully: \(post)")
             return post
             
         } catch let error as AppwriteError {
-            debugPrint("📱 Appwrite error during post creation: \(String(describing: error.type)) - \(String(describing: error.message))")
             switch error.type {
             case "user_unauthorized":
                 throw DatabaseError.unauthorized
@@ -308,7 +261,6 @@ class AppwriteService {
                 throw DatabaseError.creationFailed("Appwrite error: \(String(describing: error.message))")
             }
         } catch {
-            debugPrint("📱 Unexpected error during post creation: \(error)")
             throw DatabaseError.creationFailed(error.localizedDescription)
         }
     }
@@ -318,22 +270,15 @@ class AppwriteService {
     /// Creates a new article in the database
     func createArticle(title: String, content: String, coverImageId: String? = nil, tags: [String] = []) async throws -> Article {
         do {
-            print("📱 AppwriteService: Starting article creation")
-            print("📱 AppwriteService: Using database ID: \(AppwriteService.databaseId)")
-            print("📱 AppwriteService: Using collection ID: \(Self.articlesCollectionId)")
-            
             // Get current user
             let user = try await account.get()
-            print("📱 AppwriteService: Got user: \(user.id)")
             
             // Create ISO 8601 date string
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             let dateString = formatter.string(from: Date())
-            print("📱 AppwriteService: Created date string: \(dateString)")
             
             // Create article document
-            print("📱 AppwriteService: Attempting to create article document")
             let document = try await databases.createDocument(
                 databaseId: AppwriteService.databaseId,
                 collectionId: Self.articlesCollectionId,
@@ -351,8 +296,6 @@ class AppwriteService {
                     "views": 0
                 ]
             )
-            print("📱 AppwriteService: Document created successfully with ID: \(document.id)")
-            print("📱 AppwriteService: Raw document data: \(document.data)")
             
             // Create Article object from document data
             let article = Article(
@@ -373,11 +316,9 @@ class AppwriteService {
                 commentCount: 0
             )
             
-            print("📱 AppwriteService: Article object created successfully: \(article)")
             return article
             
         } catch let error as AppwriteError {
-            print("📱 AppwriteService: Appwrite error during article creation: \(String(describing: error.type)) - \(String(describing: error.message))")
             switch error.type {
             case "user_unauthorized":
                 throw DatabaseError.unauthorized
@@ -385,7 +326,6 @@ class AppwriteService {
                 throw DatabaseError.creationFailed("Appwrite error: \(String(describing: error.message))")
             }
         } catch {
-            print("📱 AppwriteService: Unexpected error during article creation: \(error)")
             throw DatabaseError.creationFailed(error.localizedDescription)
         }
     }
@@ -393,8 +333,6 @@ class AppwriteService {
     /// Fetches articles with pagination, sorted by creation date
     func fetchArticles(limit: Int = 10, offset: Int = 0) async throws -> [Article] {
         do {
-            debugPrint("📱 Fetching articles with limit: \(limit), offset: \(offset)")
-            
             let documents = try await databases.listDocuments(
                 databaseId: AppwriteService.databaseId,
                 collectionId: Self.articlesCollectionId,
@@ -433,11 +371,9 @@ class AppwriteService {
                 articles.append(article)
             }
             
-            debugPrint("📱 Successfully fetched \(articles.count) articles")
             return articles
             
         } catch {
-            debugPrint("📱 Error fetching articles: \(error)")
             throw error
         }
     }
@@ -481,7 +417,6 @@ class AppwriteService {
             )
             
         } catch {
-            debugPrint("📱 Error updating article: \(error)")
             throw error
         }
     }
@@ -661,7 +596,16 @@ class AppwriteService {
         _ email: String,
         _ password: String
     ) async throws -> Session {
-        try await account.createEmailPasswordSession(
+        // Try to logout first to clear any stale sessions
+        do {
+            try await logout()
+        } catch {
+            // Ignore logout errors as we just want to ensure no active session
+            debugPrint("📱 Logout before login attempt failed (this is usually ok): \(error)")
+        }
+        
+        // Now attempt login
+        return try await account.createEmailPasswordSession(
             email: email,
             password: password
         )
@@ -696,7 +640,6 @@ class AppwriteService {
             
             return userInfo
         } catch {
-            debugPrint("📱 Error fetching user info: \(error)")
             // Return a default user info if fetch fails
             return UserInfo(id: userId, name: "User \(String(userId.prefix(4)))", email: "")
         }
@@ -706,17 +649,12 @@ class AppwriteService {
     
     /// Likes a post or article
     func like(documentId: String, collectionId: String) async throws {
-        debugPrint("📱 Like: Starting like operation for document \(documentId) in collection \(collectionId)")
-        
         guard let user = try? await account.get() else {
-            debugPrint("📱 Like: Failed - User not authenticated")
             throw DatabaseError.unauthorized
         }
-        debugPrint("📱 Like: User authenticated with ID: \(user.id)")
         
         do {
             // First, get current likes count
-            debugPrint("📱 Like: Fetching current document")
             let document = try await databases.getDocument(
                 databaseId: AppwriteService.databaseId,
                 collectionId: collectionId,
@@ -724,10 +662,8 @@ class AppwriteService {
             )
             
             let currentLikes = (document.data["likes"]?.value as? Int) ?? 0
-            debugPrint("📱 Like: Current likes count: \(currentLikes)")
             
             // Then increment likes count
-            debugPrint("📱 Like: Updating likes count to \(currentLikes + 1)")
             _ = try await databases.updateDocument(
                 databaseId: AppwriteService.databaseId,
                 collectionId: collectionId,
@@ -736,10 +672,8 @@ class AppwriteService {
                     "likes": currentLikes + 1
                 ]
             )
-            debugPrint("📱 Like: Successfully updated likes count")
             
             // Check if a like record already exists
-            debugPrint("📱 Like: Checking for existing like record")
             let likes = try await databases.listDocuments(
                 databaseId: AppwriteService.databaseId,
                 collectionId: Self.likesCollectionId,
@@ -748,37 +682,26 @@ class AppwriteService {
                     Query.equal("documentId", value: documentId)
                 ]
             )
-            debugPrint("📱 Like: Found \(likes.documents.count) existing like records")
             
             if let existingLike = likes.documents.first {
-                debugPrint("📱 Like: Found existing like record with ID: \(existingLike.id)")
-                // Update existing like record with optional isLiked field
                 var updateData: [String: Any] = [:]
                 
                 // Check if isLiked field exists
-                if let isLikedValue = existingLike.data["isLiked"]?.value as? Bool {
-                    debugPrint("📱 Like: Existing record has isLiked field with value: \(isLikedValue)")
+                if existingLike.data["isLiked"]?.value is Bool {
                     updateData["isLiked"] = true
-                } else {
-                    debugPrint("📱 Like: Existing record does not have isLiked field")
                 }
                 
                 if !updateData.isEmpty {
-                    debugPrint("📱 Like: Updating existing record with data: \(updateData)")
                     _ = try await databases.updateDocument(
                         databaseId: AppwriteService.databaseId,
                         collectionId: Self.likesCollectionId,
                         documentId: existingLike.id,
                         data: updateData
                     )
-                    debugPrint("📱 Like: Successfully updated existing like record")
-                } else {
-                    debugPrint("📱 Like: No update needed for existing record")
                 }
             } else {
                 // Create new like record with optional isLiked field
                 let likeId = ID.unique()
-                debugPrint("📱 Like: Creating new like record with ID: \(likeId)")
                 var createData: [String: Any] = [
                     "userId": user.id,
                     "documentId": documentId,
@@ -787,52 +710,36 @@ class AppwriteService {
                 ]
                 
                 // Check if isLiked field exists in schema
-                debugPrint("📱 Like: Checking if isLiked field exists in schema")
                 if let existingDoc = try? await databases.listDocuments(
                     databaseId: AppwriteService.databaseId,
                     collectionId: Self.likesCollectionId,
                     queries: []
                 ).documents.first {
                     if existingDoc.data["isLiked"] != nil {
-                        debugPrint("📱 Like: isLiked field exists in schema, adding to create data")
                         createData["isLiked"] = true
-                    } else {
-                        debugPrint("📱 Like: isLiked field does not exist in schema")
                     }
                 }
                 
-                debugPrint("📱 Like: Creating new record with data: \(createData)")
                 _ = try await databases.createDocument(
                     databaseId: AppwriteService.databaseId,
                     collectionId: Self.likesCollectionId,
                     documentId: likeId,
                     data: createData
                 )
-                debugPrint("📱 Like: Successfully created new like record")
             }
         } catch {
-            debugPrint("📱 Like: Error occurred: \(error.localizedDescription)")
-            if let appwriteError = error as? AppwriteError {
-                debugPrint("📱 Like: Appwrite error type: \(String(describing: appwriteError.type))")
-                debugPrint("📱 Like: Appwrite error message: \(String(describing: appwriteError.message))")
-            }
             throw DatabaseError.updateFailed(error.localizedDescription)
         }
     }
     
     /// Unlikes a post or article
     func unlike(documentId: String, collectionId: String) async throws {
-        debugPrint("📱 Unlike: Starting unlike operation for document \(documentId) in collection \(collectionId)")
-        
         guard let user = try? await account.get() else {
-            debugPrint("📱 Unlike: Failed - User not authenticated")
             throw DatabaseError.unauthorized
         }
-        debugPrint("📱 Unlike: User authenticated with ID: \(user.id)")
         
         do {
             // First, get current likes count
-            debugPrint("📱 Unlike: Fetching current document")
             let document = try await databases.getDocument(
                 databaseId: AppwriteService.databaseId,
                 collectionId: collectionId,
@@ -841,10 +748,8 @@ class AppwriteService {
             
             let currentLikes = (document.data["likes"]?.value as? Int) ?? 0
             let newLikes = max(0, currentLikes - 1) // Prevent negative likes
-            debugPrint("📱 Unlike: Current likes: \(currentLikes), New likes: \(newLikes)")
             
             // Then decrement likes count
-            debugPrint("📱 Unlike: Updating likes count")
             _ = try await databases.updateDocument(
                 databaseId: AppwriteService.databaseId,
                 collectionId: collectionId,
@@ -853,10 +758,8 @@ class AppwriteService {
                     "likes": newLikes
                 ]
             )
-            debugPrint("📱 Unlike: Successfully updated likes count")
             
             // Find and update the like record
-            debugPrint("📱 Unlike: Finding like record")
             let likes = try await databases.listDocuments(
                 databaseId: AppwriteService.databaseId,
                 collectionId: Self.likesCollectionId,
@@ -867,91 +770,46 @@ class AppwriteService {
             )
             
             if let likeDoc = likes.documents.first {
-                debugPrint("📱 Unlike: Found like record with ID: \(likeDoc.id)")
                 var updateData: [String: Any] = [:]
                 
                 // Check if isLiked field exists
-                if let isLikedValue = likeDoc.data["isLiked"]?.value as? Bool {
-                    debugPrint("📱 Unlike: Existing record has isLiked field with value: \(isLikedValue)")
+                if likeDoc.data["isLiked"]?.value is Bool {
                     updateData["isLiked"] = false
-                } else {
-                    debugPrint("📱 Unlike: Existing record does not have isLiked field")
                 }
                 
                 if !updateData.isEmpty {
-                    debugPrint("📱 Unlike: Updating record with data: \(updateData)")
                     _ = try await databases.updateDocument(
                         databaseId: AppwriteService.databaseId,
                         collectionId: Self.likesCollectionId,
                         documentId: likeDoc.id,
                         data: updateData
                     )
-                    debugPrint("📱 Unlike: Successfully updated like record")
-                } else {
-                    debugPrint("📱 Unlike: No update needed for record")
                 }
-            } else {
-                debugPrint("📱 Unlike: No like record found to update")
             }
         } catch {
-            debugPrint("📱 Unlike: Error occurred: \(error.localizedDescription)")
-            if let appwriteError = error as? AppwriteError {
-                debugPrint("📱 Unlike: Appwrite error type: \(String(describing: appwriteError.type))")
-                debugPrint("📱 Unlike: Appwrite error message: \(String(describing: appwriteError.message))")
-            }
             throw DatabaseError.updateFailed(error.localizedDescription)
         }
     }
     
     /// Checks if a user has liked a document
     func hasLiked(documentId: String) async throws -> Bool {
-        debugPrint("📱 HasLiked: Checking like status for document \(documentId)")
-        
         guard let user = try? await account.get() else {
-            debugPrint("📱 HasLiked: Failed - User not authenticated")
             throw DatabaseError.unauthorized
         }
-        debugPrint("📱 HasLiked: User authenticated with ID: \(user.id)")
         
         do {
-            debugPrint("📱 HasLiked: Building query conditions")
-            var queries: [String] = [
-                Query.equal("userId", value: user.id),
-                Query.equal("documentId", value: documentId)
-            ]
-            
-            // Check if isLiked field exists in schema
-            debugPrint("📱 HasLiked: Checking if isLiked field exists in schema")
-            if let existingDoc = try? await databases.listDocuments(
-                databaseId: AppwriteService.databaseId,
-                collectionId: Self.likesCollectionId,
-                queries: []
-            ).documents.first {
-                if existingDoc.data["isLiked"] != nil {
-                    debugPrint("📱 HasLiked: isLiked field exists in schema, adding to query")
-                    queries.append(Query.equal("isLiked", value: true))
-                } else {
-                    debugPrint("📱 HasLiked: isLiked field does not exist in schema")
-                }
-            }
-            
-            debugPrint("📱 HasLiked: Executing query with conditions: \(queries)")
             let likes = try await databases.listDocuments(
                 databaseId: AppwriteService.databaseId,
                 collectionId: Self.likesCollectionId,
-                queries: queries
+                queries: [
+                    Query.equal("userId", value: user.id),
+                    Query.equal("documentId", value: documentId)
+                ]
             )
             
             let hasLiked = !likes.documents.isEmpty
-            debugPrint("📱 HasLiked: Found \(likes.documents.count) matching records")
-            debugPrint("📱 HasLiked: Result - \(hasLiked)")
             return hasLiked
         } catch {
-            debugPrint("📱 HasLiked: Error occurred: \(error.localizedDescription)")
-            if let appwriteError = error as? AppwriteError {
-                debugPrint("📱 HasLiked: Appwrite error type: \(String(describing: appwriteError.type))")
-                debugPrint("📱 HasLiked: Appwrite error message: \(String(describing: appwriteError.message))")
-            }
             throw DatabaseError.fetchFailed(error.localizedDescription)
         }
     }
@@ -960,13 +818,9 @@ class AppwriteService {
     
     /// Creates a new comment on a post or article
     func createComment(text: String, documentId: String, collectionId: String) async throws -> Comment {
-        debugPrint("📱 CreateComment: Starting comment creation for document \(documentId)")
-        
         guard let user = try? await account.get() else {
-            debugPrint("📱 CreateComment: Failed - User not authenticated")
             throw DatabaseError.unauthorized
         }
-        debugPrint("📱 CreateComment: User authenticated with ID: \(user.id)")
         
         do {
             // Validate text length
@@ -977,7 +831,6 @@ class AppwriteService {
             let commentId = ID.unique()
             let dateString = Date().ISO8601Format()
             
-            debugPrint("📱 CreateComment: Creating comment document")
             let document = try await databases.createDocument(
                 databaseId: AppwriteService.databaseId,
                 collectionId: Self.commentsCollectionId,
@@ -990,10 +843,8 @@ class AppwriteService {
                     "createdAt": dateString
                 ]
             )
-            debugPrint("📱 CreateComment: Comment created with ID: \(commentId)")
             
             // Increment comments count on the parent document
-            debugPrint("📱 CreateComment: Updating comments count on parent document")
             let parentDoc = try await databases.getDocument(
                 databaseId: AppwriteService.databaseId,
                 collectionId: collectionId,
@@ -1001,7 +852,6 @@ class AppwriteService {
             )
             
             let currentComments = (parentDoc.data["comments"]?.value as? Int) ?? 0
-            debugPrint("📱 CreateComment: Current comments count: \(currentComments)")
             
             _ = try await databases.updateDocument(
                 databaseId: AppwriteService.databaseId,
@@ -1011,7 +861,6 @@ class AppwriteService {
                     "comments": currentComments + 1
                 ]
             )
-            debugPrint("📱 CreateComment: Updated comments count to \(currentComments + 1)")
             
             // Create and return Comment object
             let formatter = ISO8601DateFormatter()
@@ -1028,19 +877,12 @@ class AppwriteService {
             return comment
             
         } catch {
-            debugPrint("📱 CreateComment: Error occurred: \(error.localizedDescription)")
-            if let appwriteError = error as? AppwriteError {
-                debugPrint("📱 CreateComment: Appwrite error type: \(String(describing: appwriteError.type))")
-                debugPrint("📱 CreateComment: Appwrite error message: \(String(describing: appwriteError.message))")
-            }
             throw DatabaseError.creationFailed(error.localizedDescription)
         }
     }
     
     /// Fetches comments for a post or article
     func fetchComments(documentId: String, limit: Int = 10, offset: Int = 0) async throws -> [Comment] {
-        debugPrint("📱 FetchComments: Starting fetch for document \(documentId)")
-        
         do {
             let documents = try await databases.listDocuments(
                 databaseId: AppwriteService.databaseId,
@@ -1053,28 +895,15 @@ class AppwriteService {
                 ]
             )
             
-            debugPrint("📱 FetchComments: Found \(documents.documents.count) comments")
-            
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            
             return documents.documents.compactMap { document in
-                debugPrint("📱 FetchComments: Processing document ID: \(document.id)")
-                debugPrint("📱 FetchComments: Raw document data: \(document.data)")
-                
                 let userId = document.data["userId"]?.value as? String ?? ""
                 let author = document.data["author"]?.value as? String ?? ""
                 let text = document.data["text"]?.value as? String ?? ""
                 let dateString = document.data["createdAt"]?.value as? String ?? ""
                 
-                debugPrint("📱 FetchComments: Extracted values - userId: \(userId), author: \(author), text: \(text), dateString: \(dateString)")
-                
-                guard let date = formatter.date(from: dateString) else {
-                    debugPrint("📱 FetchComments: Failed to parse date string: \(dateString)")
+                guard let date = ISO8601DateFormatter().date(from: dateString) else {
                     return nil as Comment?
                 }
-                
-                debugPrint("📱 FetchComments: Successfully parsed date: \(date)")
                 
                 let comment = Comment(
                     id: document.id,
@@ -1084,29 +913,19 @@ class AppwriteService {
                     text: text,
                     createdAt: date
                 )
-                debugPrint("📱 FetchComments: Successfully created Comment object: \(comment)")
                 return comment
             }
             
         } catch {
-            debugPrint("📱 FetchComments: Error occurred: \(error.localizedDescription)")
-            if let appwriteError = error as? AppwriteError {
-                debugPrint("📱 FetchComments: Appwrite error type: \(String(describing: appwriteError.type))")
-                debugPrint("📱 FetchComments: Appwrite error message: \(String(describing: appwriteError.message))")
-            }
             throw DatabaseError.fetchFailed(error.localizedDescription)
         }
     }
     
     /// Deletes a comment
     func deleteComment(commentId: String, documentId: String, collectionId: String) async throws {
-        debugPrint("📱 DeleteComment: Starting deletion of comment \(commentId)")
-        
         guard let user = try? await account.get() else {
-            debugPrint("📱 DeleteComment: Failed - User not authenticated")
             throw DatabaseError.unauthorized
         }
-        debugPrint("📱 DeleteComment: User authenticated with ID: \(user.id)")
         
         do {
             // First verify the comment belongs to the user
@@ -1118,12 +937,10 @@ class AppwriteService {
             
             guard let commentUserId = comment.data["userId"]?.value as? String,
                   commentUserId == user.id else {
-                debugPrint("📱 DeleteComment: Failed - User not authorized to delete this comment")
                 throw DatabaseError.unauthorized
             }
             
             // Delete the comment
-            debugPrint("📱 DeleteComment: Deleting comment document")
             _ = try await databases.deleteDocument(
                 databaseId: AppwriteService.databaseId,
                 collectionId: Self.commentsCollectionId,
@@ -1131,7 +948,6 @@ class AppwriteService {
             )
             
             // Decrement comments count on the parent document
-            debugPrint("📱 DeleteComment: Updating comments count on parent document")
             let parentDoc = try await databases.getDocument(
                 databaseId: AppwriteService.databaseId,
                 collectionId: collectionId,
@@ -1139,7 +955,6 @@ class AppwriteService {
             )
             
             let currentComments = (parentDoc.data["comments"]?.value as? Int) ?? 0
-            debugPrint("📱 DeleteComment: Current comments count: \(currentComments)")
             
             _ = try await databases.updateDocument(
                 databaseId: AppwriteService.databaseId,
@@ -1149,14 +964,8 @@ class AppwriteService {
                     "comments": max(0, currentComments - 1)
                 ]
             )
-            debugPrint("📱 DeleteComment: Updated comments count to \(max(0, currentComments - 1))")
             
         } catch {
-            debugPrint("📱 DeleteComment: Error occurred: \(error.localizedDescription)")
-            if let appwriteError = error as? AppwriteError {
-                debugPrint("📱 DeleteComment: Appwrite error type: \(String(describing: appwriteError.type))")
-                debugPrint("📱 DeleteComment: Appwrite error message: \(String(describing: appwriteError.message))")
-            }
             throw DatabaseError.updateFailed(error.localizedDescription)
         }
     }

@@ -86,19 +86,16 @@ class CameraViewModel: NSObject, ObservableObject {
                         DispatchQueue.main.async {
                             self.error = "Video output is not available"
                         }
-                        debugPrint("📱 Video output is not enabled")
                     }
                 } else {
                     DispatchQueue.main.async {
                         self.error = "Camera device not found"
                     }
-                    debugPrint("📱 No camera device available")
                 }
             } catch {
                 DispatchQueue.main.async {
                     self.error = "Failed to setup camera: \(error.localizedDescription)"
                 }
-                debugPrint("📱 Camera setup error: \(error)")
             }
         }
     }
@@ -231,14 +228,12 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         
         if let error = error {
             self.error = "Failed to capture photo: \(error.localizedDescription)"
-            debugPrint("📱 Photo capture error: \(error)")
             return
         }
         
         guard let imageData = photo.fileDataRepresentation(),
               let image = UIImage(data: imageData) else {
             self.error = "Could not process captured photo"
-            debugPrint("📱 Could not get image data")
             return
         }
         
@@ -246,7 +241,6 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
             self?.capturedImage = image
             self?.onImageCaptured?(image)
         }
-        debugPrint("📱 Photo captured successfully")
     }
 }
 
@@ -256,14 +250,12 @@ extension CameraViewModel: AVCaptureFileOutputRecordingDelegate {
         
         if let error = error {
             self.error = "Failed to record video: \(error.localizedDescription)"
-            debugPrint("📱 Video recording error: \(error)")
             return
         }
         
         DispatchQueue.main.async { [weak self] in
             self?.onVideoCaptured?(outputFileURL)
         }
-        debugPrint("📱 Video recorded successfully")
     }
 }
 

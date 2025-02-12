@@ -57,8 +57,7 @@ class AuthenticationViewModel: ObservableObject {
         do {
             switch model.authState {
             case .signIn:
-                let session = try await appwrite.login(email, password)
-                debugPrint("Successfully signed in: \(session.userId)")
+                let _ = try await appwrite.login(email, password)
                 // Get user details after login
                 let account = try await appwrite.account.get()
                 name = account.name // Store the name
@@ -67,12 +66,10 @@ class AuthenticationViewModel: ObservableObject {
             case .signUp:
                 guard validateSignUpFields() else { return }
                 do {
-                    let user = try await appwrite.register(email, password, name: name)
-                    debugPrint("Successfully registered: \(user.id)")
+                    let _ = try await appwrite.register(email, password, name: name)
                     
                     // Automatically log in after registration
-                    let session = try await appwrite.login(email, password)
-                    debugPrint("Successfully logged in after registration: \(session.userId)")
+                    let _ = try await appwrite.login(email, password)
                     
                     // Get user details
                     let account = try await appwrite.account.get()
@@ -82,20 +79,17 @@ class AuthenticationViewModel: ObservableObject {
                 } catch let error as NSError {
                     // If it's the scope error, treat it as success since the user is created
                     if error.localizedDescription.contains("missing scope (account)") {
-                        debugPrint("📱 Ignoring scope error and proceeding with authentication")
                         isAuthenticated = true
                         return
                     }
                     
                     showError = true
                     errorMessage = error.localizedDescription
-                    debugPrint("📱 Registration error: \(error)")
                 }
             }
         } catch {
             showError = true
             errorMessage = (error as NSError).localizedDescription
-            debugPrint("📱 Authentication error: \(error)")
         }
     }
     
@@ -145,33 +139,22 @@ class AuthenticationViewModel: ObservableObject {
         } catch {
             showError = true
             errorMessage = (error as NSError).localizedDescription
-            debugPrint("📱 Sign out error: \(error)")
         }
     }
     
     func updateProfile(name: String) async throws {
-        debugPrint("📱 UpdateProfile: Starting profile update - name: \(name)")
         isLoading = true
-        defer { 
-            debugPrint("📱 UpdateProfile: Completed profile update process")
-            isLoading = false 
-        }
+        defer { isLoading = false }
         
         do {
-            debugPrint("📱 UpdateProfile: Attempting to update name in Appwrite account")
             let _ = try await appwrite.account.updateName(name: name)
-            debugPrint("📱 UpdateProfile: Successfully updated name in Appwrite account")
             
-            debugPrint("📱 UpdateProfile: Updating local state on MainActor")
             await MainActor.run {
                 self.name = name
-                debugPrint("📱 UpdateProfile: Successfully updated local state")
             }
         } catch {
-            debugPrint("📱 UpdateProfile: Error occurred: \(error.localizedDescription)")
-            if let appwriteError = error as? AppwriteError {
-                debugPrint("📱 UpdateProfile: Appwrite error type: \(String(describing: appwriteError.type))")
-                debugPrint("📱 UpdateProfile: Appwrite error message: \(String(describing: appwriteError.message))")
+            if error is AppwriteError {
+                throw error
             }
             throw error
         }

@@ -212,11 +212,8 @@ struct PostView: View {
     private func loadComments() {
         Task {
             do {
-                debugPrint("📱 PostView: Loading comments for post \(post.id)")
                 comments = try await appwrite.fetchComments(documentId: post.id)
-                debugPrint("📱 PostView: Successfully loaded \(comments.count) comments")
             } catch {
-                debugPrint("📱 PostView: Error loading comments: \(error)")
                 errorMessage = "Failed to load comments"
             }
         }
@@ -230,16 +227,11 @@ struct PostView: View {
         
         Task {
             do {
-                debugPrint("📱 PostView: Adding comment to post \(post.id)")
-                debugPrint("📱 PostView: Comment text: \(commentText)")
-                
                 let comment = try await appwrite.createComment(
                     text: commentText,
                     documentId: post.id,
                     collectionId: AppwriteService.postsCollectionId
                 )
-                
-                debugPrint("📱 PostView: Successfully added comment: \(comment)")
                 
                 await MainActor.run {
                     commentText = ""
@@ -247,7 +239,6 @@ struct PostView: View {
                     isAddingComment = false
                 }
             } catch {
-                debugPrint("📱 PostView: Error adding comment: \(error)")
                 errorMessage = "Failed to add comment"
                 isAddingComment = false
             }

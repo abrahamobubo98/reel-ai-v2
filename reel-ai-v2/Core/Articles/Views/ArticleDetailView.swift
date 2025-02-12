@@ -234,36 +234,24 @@ struct ArticleDetailView: View {
     }
     
     private func handleLikeAction() {
-        guard !isLoading else {
-            debugPrint("📱 ArticleDetailView: Like action skipped - already loading")
-            return
-        }
+        guard !isLoading else { return }
         
-        debugPrint("📱 ArticleDetailView: Starting like action for article \(article.id)")
-        debugPrint("📱 ArticleDetailView: Current state - isLiked: \(isLiked), likeCount: \(likeCount)")
         isLoading = true
         
         Task {
             do {
                 if isLiked {
-                    debugPrint("📱 ArticleDetailView: Attempting to unlike article \(article.id)")
                     try await appwrite.unlike(documentId: article.id, collectionId: AppwriteService.articlesCollectionId)
                     likeCount -= 1
-                    debugPrint("📱 ArticleDetailView: Successfully unliked article. New like count: \(likeCount)")
                 } else {
-                    debugPrint("📱 ArticleDetailView: Attempting to like article \(article.id)")
                     try await appwrite.like(documentId: article.id, collectionId: AppwriteService.articlesCollectionId)
                     likeCount += 1
-                    debugPrint("📱 ArticleDetailView: Successfully liked article. New like count: \(likeCount)")
                 }
                 isLiked.toggle()
-                debugPrint("📱 ArticleDetailView: Updated isLiked state: \(isLiked)")
             } catch {
-                debugPrint("📱 ArticleDetailView: Error handling article like action: \(error)")
-                debugPrint("📱 ArticleDetailView: Error details - \(String(describing: error))")
+                // Handle error silently
             }
             isLoading = false
-            debugPrint("📱 ArticleDetailView: Like action completed")
         }
     }
 } 

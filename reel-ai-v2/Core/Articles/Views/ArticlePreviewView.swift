@@ -92,48 +92,32 @@ struct ArticlePreviewView: View {
         .task {
             // Check if user has liked the article
             do {
-                debugPrint("📱 ArticlePreviewView: Checking like status for article \(article.id)")
-                debugPrint("📱 ArticlePreviewView: Current like count: \(likeCount)")
                 isLiked = try await appwrite.hasLiked(documentId: article.id)
-                debugPrint("📱 ArticlePreviewView: Like status checked - isLiked: \(isLiked)")
             } catch {
-                debugPrint("📱 ArticlePreviewView: Error checking article like status: \(error)")
-                debugPrint("📱 ArticlePreviewView: Error details - \(String(describing: error))")
+                // Handle error silently
             }
         }
     }
     
     private func handleLikeAction() {
-        guard !isLoading else {
-            debugPrint("📱 ArticlePreviewView: Like action skipped - already loading")
-            return
-        }
+        guard !isLoading else { return }
         
-        debugPrint("📱 ArticlePreviewView: Starting like action for article \(article.id)")
-        debugPrint("📱 ArticlePreviewView: Current state - isLiked: \(isLiked), likeCount: \(likeCount)")
         isLoading = true
         
         Task {
             do {
                 if isLiked {
-                    debugPrint("📱 ArticlePreviewView: Attempting to unlike article \(article.id)")
                     try await appwrite.unlike(documentId: article.id, collectionId: AppwriteService.articlesCollectionId)
                     likeCount -= 1
-                    debugPrint("📱 ArticlePreviewView: Successfully unliked article. New like count: \(likeCount)")
                 } else {
-                    debugPrint("📱 ArticlePreviewView: Attempting to like article \(article.id)")
                     try await appwrite.like(documentId: article.id, collectionId: AppwriteService.articlesCollectionId)
                     likeCount += 1
-                    debugPrint("📱 ArticlePreviewView: Successfully liked article. New like count: \(likeCount)")
                 }
                 isLiked.toggle()
-                debugPrint("📱 ArticlePreviewView: Updated isLiked state: \(isLiked)")
             } catch {
-                debugPrint("📱 ArticlePreviewView: Error handling article like action: \(error)")
-                debugPrint("📱 ArticlePreviewView: Error details - \(String(describing: error))")
+                // Handle error silently
             }
             isLoading = false
-            debugPrint("📱 ArticlePreviewView: Like action completed")
         }
     }
 } 
