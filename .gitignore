@@ -1,2 +1,39 @@
 # Sensitive configuration
 reel-ai-v2/Config/AppConfig.swift 
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Xcode
+.DS_Store
+xcuserdata/
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcworkspace/contents.xcworkspacedata
+**/xcshareddata/WorkspaceSettings.xcsettings
+
+# Swift Package Manager
+.build/
+Packages/
+Package.resolved
+*.xcodeproj
+.swiftpm
+
+# CocoaPods
+Pods/
+*.xcworkspace
+
+# Carthage
+Carthage/Build/
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Code Injection
+injectionforxcode/ 

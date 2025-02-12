@@ -187,13 +187,13 @@ class AppwriteService {
     static let shared = AppwriteService()
     
     // MARK: - Public Constants
-    static let postsCollectionId = "67a3d4320034a6727a55"
-    static let articlesCollectionId = "67a58f8d001dcc4329a6"
-    static let likesCollectionId = "67a7e4cf0036cba3a09d"
-    static let commentsCollectionId = "67aa3e110013042f9ed2"
+    static let postsCollectionId = Config.shared.appwritePostsCollectionId
+    static let articlesCollectionId = Config.shared.appwriteArticlesCollectionId
+    static let likesCollectionId = Config.shared.appwriteLikesCollectionId
+    static let commentsCollectionId = Config.shared.appwriteCommentsCollectionId
     
     // Database ID
-    static let databaseId = "67a3d388001df90d84c0"
+    static let databaseId = Config.shared.appwriteDatabaseId
     
     var client: Client
     var account: Account
@@ -203,24 +203,77 @@ class AppwriteService {
     // MARK: - Constants
     /// Constants used throughout the service
     enum Constants {
-        static let endpoint = "https://cloud.appwrite.io/v1"
-        static let projectId = "67a286370021b45dba67"
-        static let postMediaBucketId = "67a3d0f2002c24b13472"
-        static let apiKey = "standard_32a04112d6a86d68f3be5ad6d9da16ea60733860de5ee91d8f7a71ce08edae860c0c9d275d4d11f098d00b9e30b43accb846cdcac966a7b3325785b5c60932206ca460c7b8014430c9a010b4655fc2d245910267314a9a8a72fcfd7e2c9f1fa3e209995250ac0e4e1fa59f848c647cb2aeefa3907297f517eabfbdac67f9dc85"
+        static let endpoint = Config.shared.appwriteEndpoint
+        static let projectId = Config.shared.appwriteProjectId
+        static let postMediaBucketId = Config.shared.appwritePostMediaBucketId
+        static let apiKey = Config.shared.appwriteApiKey
         static let maxImageSizeMB = 10
         static let maxVideoSizeMB = 100
         static let compressionQuality: CGFloat = 0.8
         static let maxRetryAttempts = 3
-        static let databaseId = "67a3d388001df90d84c0"
-        static let usersCollectionId = "67a64c36002fc4f4d747" // Replace with your actual collection ID
-        static let storageId = "67a3d3c0001e6a0e84c1"
-        static let bucketId = "67a3d3e0001e6a0e84c2"
+        static let databaseId = Config.shared.appwriteDatabaseId
+        static let usersCollectionId = Config.shared.appwriteUsersCollectionId
+        static let storageId = Config.shared.appwriteStorageId
+        static let bucketId = Config.shared.appwriteBucketId
     }
     
     // Add user cache to avoid repeated fetches
     private var userCache: [String: UserInfo] = [:]
     
     private init() {
+        // Debug logging for configuration
+        print("📱 Checking configuration:")
+        print("APPWRITE_ENDPOINT: \(Constants.endpoint.isEmpty ? "MISSING" : "PRESENT")")
+        print("APPWRITE_PROJECT_ID: \(Constants.projectId.isEmpty ? "MISSING" : "PRESENT")")
+        print("APPWRITE_API_KEY: \(Constants.apiKey.isEmpty ? "MISSING" : "PRESENT")")
+        print("APPWRITE_DATABASE_ID: \(Constants.databaseId.isEmpty ? "MISSING" : "PRESENT")")
+        print("APPWRITE_POST_MEDIA_BUCKET_ID: \(Constants.postMediaBucketId.isEmpty ? "MISSING" : "PRESENT")")
+        print("APPWRITE_POSTS_COLLECTION_ID: \(Self.postsCollectionId.isEmpty ? "MISSING" : "PRESENT")")
+        print("APPWRITE_ARTICLES_COLLECTION_ID: \(Self.articlesCollectionId.isEmpty ? "MISSING" : "PRESENT")")
+        print("APPWRITE_LIKES_COLLECTION_ID: \(Self.likesCollectionId.isEmpty ? "MISSING" : "PRESENT")")
+        print("APPWRITE_COMMENTS_COLLECTION_ID: \(Self.commentsCollectionId.isEmpty ? "MISSING" : "PRESENT")")
+        print("APPWRITE_USERS_COLLECTION_ID: \(Constants.usersCollectionId.isEmpty ? "MISSING" : "PRESENT")")
+        print("APPWRITE_STORAGE_ID: \(Constants.storageId.isEmpty ? "MISSING" : "PRESENT")")
+        print("APPWRITE_BUCKET_ID: \(Constants.bucketId.isEmpty ? "MISSING" : "PRESENT")")
+        
+        // Validate configuration
+        guard !Constants.endpoint.isEmpty else {
+            fatalError("Appwrite endpoint not configured")
+        }
+        guard !Constants.projectId.isEmpty else {
+            fatalError("Appwrite project ID not configured")
+        }
+        guard !Constants.apiKey.isEmpty else {
+            fatalError("Appwrite API key not configured")
+        }
+        guard !Constants.databaseId.isEmpty else {
+            fatalError("Appwrite database ID not configured")
+        }
+        guard !Constants.postMediaBucketId.isEmpty else {
+            fatalError("Appwrite post media bucket ID not configured")
+        }
+        guard !Self.postsCollectionId.isEmpty else {
+            fatalError("Appwrite posts collection ID not configured")
+        }
+        guard !Self.articlesCollectionId.isEmpty else {
+            fatalError("Appwrite articles collection ID not configured")
+        }
+        guard !Self.likesCollectionId.isEmpty else {
+            fatalError("Appwrite likes collection ID not configured")
+        }
+        guard !Self.commentsCollectionId.isEmpty else {
+            fatalError("Appwrite comments collection ID not configured")
+        }
+        guard !Constants.usersCollectionId.isEmpty else {
+            fatalError("Appwrite users collection ID not configured")
+        }
+        guard !Constants.storageId.isEmpty else {
+            fatalError("Appwrite storage ID not configured")
+        }
+        guard !Constants.bucketId.isEmpty else {
+            fatalError("Appwrite bucket ID not configured")
+        }
+        
         self.client = Client()
             .setEndpoint(Constants.endpoint)
             .setProject(Constants.projectId)
@@ -440,12 +493,16 @@ class AppwriteService {
                 author: document.data["author"]?.value as? String ?? user.name,
                 title: document.data["title"]?.value as? String ?? title,
                 content: document.data["content"]?.value as? String ?? content,
-                coverImageId: document.data["coverImageId"]?.value as? String,
-                tags: document.data["tags"]?.value as? [String] ?? [],
+                summary: nil,
+                thumbnailUrl: nil,
                 createdAt: formatter.date(from: document.data["createdAt"]?.value as? String ?? dateString) ?? Date(),
                 updatedAt: formatter.date(from: document.data["updatedAt"]?.value as? String ?? dateString) ?? Date(),
+                status: .published,
+                tags: document.data["tags"]?.value as? [String] ?? [],
                 likes: document.data["likes"]?.value as? Int ?? 0,
-                views: document.data["views"]?.value as? Int ?? 0
+                views: document.data["views"]?.value as? Int ?? 0,
+                readingTime: 0,
+                commentCount: 0
             )
             
             print("📱 AppwriteService: Article object created successfully: \(article)")
@@ -493,12 +550,16 @@ class AppwriteService {
                     author: data["author"]?.value as? String ?? "Unknown User",
                     title: data["title"]?.value as? String ?? "",
                     content: data["content"]?.value as? String ?? "",
-                    coverImageId: data["coverImageId"]?.value as? String,
-                    tags: data["tags"]?.value as? [String] ?? [],
+                    summary: nil,
+                    thumbnailUrl: nil,
                     createdAt: formatter.date(from: data["createdAt"]?.value as? String ?? "") ?? Date(),
                     updatedAt: formatter.date(from: data["updatedAt"]?.value as? String ?? "") ?? Date(),
+                    status: .published,
+                    tags: data["tags"]?.value as? [String] ?? [],
                     likes: data["likes"]?.value as? Int ?? 0,
-                    views: data["views"]?.value as? Int ?? 0
+                    views: data["views"]?.value as? Int ?? 0,
+                    readingTime: 0,
+                    commentCount: 0
                 )
                 
                 articles.append(article)
@@ -527,7 +588,7 @@ class AppwriteService {
                 data: [
                     "title": article.title,
                     "content": article.content,
-                    "coverImageId": article.coverImageId ?? "",
+                    "thumbnailUrl": article.thumbnailUrl?.absoluteString ?? "",
                     "tags": article.tags,
                     "updatedAt": updateDateString
                 ]
@@ -539,12 +600,16 @@ class AppwriteService {
                 author: article.author,
                 title: document.data["title"]?.value as? String ?? article.title,
                 content: document.data["content"]?.value as? String ?? article.content,
-                coverImageId: document.data["coverImageId"]?.value as? String,
-                tags: document.data["tags"]?.value as? [String] ?? article.tags,
+                summary: nil,
+                thumbnailUrl: nil,
                 createdAt: article.createdAt,
                 updatedAt: formatter.date(from: updateDateString) ?? Date(),
+                status: article.status,
+                tags: document.data["tags"]?.value as? [String] ?? article.tags,
                 likes: article.likes,
-                views: article.views
+                views: article.views,
+                readingTime: article.readingTime,
+                commentCount: article.commentCount
             )
             
         } catch {

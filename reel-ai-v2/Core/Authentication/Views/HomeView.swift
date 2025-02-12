@@ -1,6 +1,7 @@
 import SwiftUI
 import AVKit
 import AVFoundation
+import Appwrite
 
 class HomeViewModel: ObservableObject {
     @Published var posts: [Post] = []
@@ -1082,6 +1083,7 @@ struct ArticlePreviewView: View {
     @State private var isLiked = false
     @State private var likeCount: Int
     @State private var isLoading = false
+    @State private var showQuiz = false
     private let appwrite = AppwriteService.shared
     
     init(article: Article) {
@@ -1224,6 +1226,7 @@ struct ArticleDetailView: View {
     @State private var showComments = false
     @State private var comments: [Comment] = []
     @State private var errorMessage: String?
+    @State private var showQuiz = false
     private let appwrite = AppwriteService.shared
     
     init(article: Article) {
@@ -1261,6 +1264,30 @@ struct ArticleDetailView: View {
                     Text(article.content)
                         .font(.body)
                         .lineSpacing(8)
+                    
+                    // Quiz Button
+                    Button(action: {
+                        showQuiz = true
+                    }) {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                            Text("Take Quiz")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                    }
+                    .padding(.vertical)
+                    .sheet(isPresented: $showQuiz) {
+                        QuizView(viewModel: QuizViewModel(
+                            quizService: QuizService(databases: Databases(AppwriteService.shared.client), databaseId: Config.shared.appwriteDatabaseId),
+                            openAIService: OpenAIQuizService(),
+                            userId: article.userId,
+                            articleId: article.id
+                        ))
+                    }
                     
                     // Stats
                     HStack(spacing: 24) {

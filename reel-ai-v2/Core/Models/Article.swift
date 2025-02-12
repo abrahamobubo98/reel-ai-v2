@@ -1,83 +1,44 @@
 import Foundation
+import Appwrite
 
-struct Article: Codable, Identifiable {
-    let id: String
-    let userId: String
-    let author: String
-    let title: String
-    let content: String
-    let coverImageId: String?
-    let tags: [String]
-    let createdAt: Date
-    let updatedAt: Date
-    let likes: Int
-    let views: Int
-    let comments: Int
+public struct Article: Codable, Identifiable {
+    public let id: String
+    public let userId: String
+    public let author: String
+    public let title: String
+    public let content: String
+    public let summary: String?
+    public let thumbnailUrl: URL?
+    public let createdAt: Date
+    public let updatedAt: Date
+    public let status: ArticleStatus
+    public let tags: [String]
+    public let likes: Int
+    public let views: Int
+    public let readingTime: Int
+    public let commentCount: Int
     
-    enum CodingKeys: String, CodingKey {
-        case id = "$id"
-        case userId
-        case author
-        case title
-        case content
-        case coverImageId
-        case tags
-        case createdAt
-        case updatedAt
-        case likes
-        case views
-        case comments
+    public enum ArticleStatus: String, Codable {
+        case draft
+        case published
+        case archived
     }
     
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
-        userId = try container.decode(String.self, forKey: .userId)
-        author = try container.decode(String.self, forKey: .author)
-        title = try container.decode(String.self, forKey: .title)
-        content = try container.decode(String.self, forKey: .content)
-        coverImageId = try container.decode(String?.self, forKey: .coverImageId)
-        tags = try container.decode([String].self, forKey: .tags)
-        likes = try container.decode(Int.self, forKey: .likes)
-        views = try container.decode(Int.self, forKey: .views)
-        comments = try container.decode(Int.self, forKey: .comments)
-        
-        // Handle ISO 8601 date format from Appwrite
-        if let dateString = try container.decodeIfPresent(String.self, forKey: .createdAt) {
-            let formatter = ISO8601DateFormatter()
-            if let date = formatter.date(from: dateString) {
-                createdAt = date
-            } else {
-                throw DecodingError.dataCorruptedError(forKey: .createdAt, in: container, debugDescription: "Date string does not match expected format")
-            }
-        } else {
-            createdAt = Date()
-        }
-        
-        if let dateString = try container.decodeIfPresent(String.self, forKey: .updatedAt) {
-            let formatter = ISO8601DateFormatter()
-            if let date = formatter.date(from: dateString) {
-                updatedAt = date
-            } else {
-                throw DecodingError.dataCorruptedError(forKey: .updatedAt, in: container, debugDescription: "Date string does not match expected format")
-            }
-        } else {
-            updatedAt = Date()
-        }
-    }
-    
-    init(id: String, userId: String, author: String, title: String, content: String, coverImageId: String?, tags: [String], createdAt: Date, updatedAt: Date, likes: Int, views: Int, comments: Int = 0) {
+    public init(id: String, userId: String, author: String, title: String, content: String, summary: String?, thumbnailUrl: URL?, createdAt: Date, updatedAt: Date, status: ArticleStatus, tags: [String], likes: Int, views: Int, readingTime: Int, commentCount: Int) {
         self.id = id
         self.userId = userId
         self.author = author
         self.title = title
         self.content = content
-        self.coverImageId = coverImageId
-        self.tags = tags
+        self.summary = summary
+        self.thumbnailUrl = thumbnailUrl
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.status = status
+        self.tags = tags
         self.likes = likes
         self.views = views
-        self.comments = comments
+        self.readingTime = readingTime
+        self.commentCount = commentCount
     }
 } 
