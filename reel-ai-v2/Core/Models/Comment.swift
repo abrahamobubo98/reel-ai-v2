@@ -34,7 +34,7 @@ struct Comment: Identifiable, Codable {
         case userId
         case author
         case text
-        case createdAt = "$createdAt"
+        case createdAt
     }
     
     init(from decoder: Decoder) throws {

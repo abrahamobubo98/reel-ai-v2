@@ -5,7 +5,7 @@ import MarkdownUI
 
 // MARK: - Model & ViewModel
 struct CreatePostModel {
-    var mediaType: MediaType = .photo
+    var mediaType: MediaType = .image
     var caption: String = ""
     var externalLink: String = ""
     var isUploading: Bool = false
@@ -16,18 +16,6 @@ struct CreatePostModel {
     var fileId: String?
     var post: Post?
     var shouldDismiss: Bool = false
-    
-    enum MediaType {
-        case photo
-        case video
-        
-        var postMediaType: Post.MediaType {
-            switch self {
-            case .photo: return .photo
-            case .video: return .video
-            }
-        }
-    }
 }
 
 @MainActor
@@ -49,7 +37,7 @@ class CreatePostViewModel: ObservableObject {
     }
     
     func handleCapturedImage(_ image: UIImage) {
-        model.mediaType = .photo
+        model.mediaType = .image
         model.image = image
         model.videoURL = nil
         model.error = nil
@@ -129,7 +117,7 @@ class CreatePostViewModel: ObservableObject {
             let post = try await appwrite.createPost(
                 mediaId: fileId,
                 caption: model.caption,
-                mediaType: model.mediaType.postMediaType,
+                mediaType: model.mediaType,
                 externalLink: model.externalLink
             )
             
@@ -236,6 +224,10 @@ struct CreateView: View {
     @StateObject private var videoPlayer = VideoPlayerManager()
     @State private var showMediaPicker = false
     @State private var showArticleEditor = false
+    @State private var selectedMedia: UIImage?
+    @State private var selectedVideoURL: URL?
+    @State private var caption = ""
+    @State private var mediaType: MediaType = .image
     
     var body: some View {
         VStack(spacing: 20) {

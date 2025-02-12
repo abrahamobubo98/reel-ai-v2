@@ -3,37 +3,6 @@ import Appwrite
 import JSONCodable
 import UIKit
 
-class MediaCache {
-    static let shared = MediaCache()
-    
-    private let imageCache = NSCache<NSString, UIImage>()
-    private let thumbnailCache = NSCache<NSString, UIImage>()
-    
-    private init() {
-        // Set cache limits (adjust these based on your app's memory requirements)
-        imageCache.countLimit = 100  // Maximum number of images
-        imageCache.totalCostLimit = 1024 * 1024 * 100  // 100 MB
-        
-        thumbnailCache.countLimit = 200  // Maximum number of thumbnails
-        thumbnailCache.totalCostLimit = 1024 * 1024 * 50  // 50 MB
-    }
-    
-    func cacheImage(_ image: UIImage, forKey key: String, isThumbnail: Bool = false) {
-        let cache = isThumbnail ? thumbnailCache : imageCache
-        cache.setObject(image, forKey: key as NSString)
-    }
-    
-    func getImage(forKey key: String, isThumbnail: Bool = false) -> UIImage? {
-        let cache = isThumbnail ? thumbnailCache : imageCache
-        return cache.object(forKey: key as NSString)
-    }
-    
-    func clearCache() {
-        imageCache.removeAllObjects()
-        thumbnailCache.removeAllObjects()
-    }
-}
-
 /// Custom errors for storage operations
 enum StorageError: LocalizedError {
     case invalidImage
@@ -84,92 +53,6 @@ enum DatabaseError: LocalizedError {
             return "Failed to update post: \(reason)"
         case .fetchFailed(let reason):
             return "Failed to fetch post: \(reason)"
-        }
-    }
-}
-
-/// Post model for database operations
-struct Post: Codable, Identifiable {
-    let id: String
-    let userId: String
-    let author: String
-    let mediaId: String
-    let mediaType: MediaType
-    let caption: String
-    let externalLink: String
-    let createdAt: Date
-    let updatedAt: Date
-    let category: String
-    let collaborators: [String]
-    let likes: Int
-    let comments: Int
-    let sharesCount: Int
-    
-    enum MediaType: String, Codable {
-        case photo
-        case video
-    }
-    
-    init(id: String, userId: String, author: String, mediaId: String, mediaType: MediaType = .photo, caption: String, externalLink: String = "", createdAt: Date, updatedAt: Date = Date(), category: String = "", collaborators: [String] = [], likes: Int = 0, comments: Int = 0, sharesCount: Int = 0) {
-        self.id = id
-        self.userId = userId
-        self.author = author
-        self.mediaId = mediaId
-        self.mediaType = mediaType
-        self.caption = caption
-        self.externalLink = externalLink
-        self.createdAt = createdAt
-        self.updatedAt = updatedAt
-        self.category = category
-        self.collaborators = collaborators
-        self.likes = likes
-        self.comments = comments
-        self.sharesCount = sharesCount
-    }
-    
-    enum CodingKeys: String, CodingKey {
-        case id = "$id"
-        case userId
-        case author
-        case mediaId
-        case mediaType
-        case caption
-        case externalLink
-        case createdAt
-        case updatedAt
-        case category
-        case collaborators
-        case likes
-        case comments
-        case sharesCount
-    }
-    
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
-        userId = try container.decode(String.self, forKey: .userId)
-        author = try container.decode(String.self, forKey: .author)
-        mediaId = try container.decode(String.self, forKey: .mediaId)
-        mediaType = try container.decode(MediaType.self, forKey: .mediaType)
-        caption = try container.decode(String.self, forKey: .caption)
-        externalLink = try container.decode(String.self, forKey: .externalLink)
-        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
-        category = try container.decode(String.self, forKey: .category)
-        collaborators = try container.decode([String].self, forKey: .collaborators)
-        likes = try container.decode(Int.self, forKey: .likes)
-        comments = try container.decode(Int.self, forKey: .comments)
-        sharesCount = try container.decode(Int.self, forKey: .sharesCount)
-        
-        // Handle ISO 8601 date format from Appwrite
-        if let dateString = try container.decodeIfPresent(String.self, forKey: .createdAt) {
-            let formatter = ISO8601DateFormatter()
-            if let date = formatter.date(from: dateString) {
-                createdAt = date
-            } else {
-                throw DecodingError.dataCorruptedError(forKey: .createdAt, in: container, debugDescription: "Date string does not match expected format")
-            }
-        } else {
-            createdAt = Date()
         }
     }
 }
@@ -316,12 +199,8 @@ class AppwriteService {
                 let mediaId = (document.data["mediaId"]?.value as? String) ?? ""
                 let caption = (document.data["caption"]?.value as? String) ?? ""
                 let dateString = (document.data["createdAt"]?.value as? String) ?? ""
-                let updatedDateString = (document.data["updatedAt"]?.value as? String) ?? dateString
-                let category = (document.data["category"]?.value as? String) ?? ""
-                let collaborators = (document.data["collaborators"]?.value as? [String]) ?? []
                 let likes = (document.data["likes"]?.value as? Int) ?? 0
                 let comments = (document.data["comments"]?.value as? Int) ?? 0
-                let sharesCount = (document.data["sharesCount"]?.value as? Int) ?? 0
                 let mediaTypeString = (document.data["mediaType"]?.value as? String) ?? "photo"
                 
                 debugPrint("📱 Extracted fields - userId: \(userId), mediaId: \(mediaId), dateString: \(dateString)")
@@ -336,23 +215,17 @@ class AppwriteService {
                 let formatter = ISO8601DateFormatter()
                 formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
                 let date = formatter.date(from: dateString) ?? Date()
-                let updatedDate = formatter.date(from: updatedDateString) ?? date
                 
                 let post = Post(
                     id: document.id,
                     userId: userId,
                     author: author,
-                    mediaId: mediaId,
-                    mediaType: Post.MediaType(rawValue: mediaTypeString) ?? .photo,
                     caption: caption,
-                    externalLink: (document.data["externalLink"]?.value as? String) ?? "",
-                    createdAt: date,
-                    updatedAt: updatedDate,
-                    category: category,
-                    collaborators: collaborators,
+                    mediaId: mediaId,
+                    mediaType: MediaType(rawValue: mediaTypeString) ?? .image,
                     likes: likes,
                     comments: comments,
-                    sharesCount: sharesCount
+                    createdAt: date
                 )
                 
                 debugPrint("📱 Successfully created post: \(post.id)")
@@ -372,7 +245,7 @@ class AppwriteService {
     }
     
     /// Creates a new post in the database
-    func createPost(mediaId: String, caption: String, mediaType: Post.MediaType = .photo, externalLink: String = "") async throws -> Post {
+    func createPost(mediaId: String, caption: String, mediaType: MediaType = .image, externalLink: String = "") async throws -> Post {
         do {
             debugPrint("📱 Starting post creation process...")
             
@@ -415,17 +288,12 @@ class AppwriteService {
                 id: document.id,
                 userId: document.data["userId"]?.value as? String ?? user.id,
                 author: document.data["author"]?.value as? String ?? user.name,
-                mediaId: document.data["mediaId"]?.value as? String ?? mediaId,
-                mediaType: Post.MediaType(rawValue: document.data["mediaType"]?.value as? String ?? mediaType.rawValue) ?? mediaType,
                 caption: document.data["caption"]?.value as? String ?? caption,
-                externalLink: document.data["externalLink"]?.value as? String ?? externalLink,
-                createdAt: formatter.date(from: document.data["createdAt"]?.value as? String ?? dateString) ?? Date(),
-                updatedAt: formatter.date(from: document.data["updatedAt"]?.value as? String ?? dateString) ?? Date(),
-                category: document.data["category"]?.value as? String ?? "",
-                collaborators: document.data["collaborators"]?.value as? [String] ?? [],
+                mediaId: document.data["mediaId"]?.value as? String ?? mediaId,
+                mediaType: MediaType(rawValue: document.data["mediaType"]?.value as? String ?? mediaType.rawValue) ?? .image,
                 likes: document.data["likes"]?.value as? Int ?? 0,
                 comments: document.data["comments"]?.value as? Int ?? 0,
-                sharesCount: document.data["sharesCount"]?.value as? Int ?? 0
+                createdAt: formatter.date(from: document.data["createdAt"]?.value as? String ?? dateString) ?? Date()
             )
             
             debugPrint("📱 Post object created successfully: \(post)")
