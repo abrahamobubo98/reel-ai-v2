@@ -36,4 +36,9 @@ fastlane/screenshots/**/*.png
 fastlane/test_output
 
 # Code Injection
-injectionforxcode/ 
+injectionforxcode/
+
+# Config files with sensitive data
+Config.plist
+**/Config.plist
+reel-ai-v2/Config.plist 
