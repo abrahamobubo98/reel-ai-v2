@@ -2,6 +2,7 @@ import SwiftUI
 import AVKit
 import Foundation
 import MarkdownUI
+import Appwrite
 
 // MARK: - Model & ViewModel
 struct CreatePostModel {
@@ -528,6 +529,7 @@ class VideoPlayerManager: ObservableObject {
     }
 }
 
+@MainActor
 class ArticleEditorViewModel: ObservableObject {
     @Published var title: String = ""
     @Published var content: String = ""
@@ -543,6 +545,8 @@ class ArticleEditorViewModel: ObservableObject {
         print("📱 ArticleEditorViewModel: Starting article save process")
         print("📱 ArticleEditorViewModel: Title length: \(title.count)")
         print("📱 ArticleEditorViewModel: Content length: \(content.count)")
+        print("📱 ArticleEditorViewModel: Number of tags: \(tags.count)")
+        print("📱 ArticleEditorViewModel: Has cover image: \(coverImage != nil)")
         
         guard !title.isEmpty else {
             error = "Please add a title"
@@ -565,9 +569,14 @@ class ArticleEditorViewModel: ObservableObject {
             if let coverImage = coverImage {
                 coverImageId = try await appwrite.uploadImage(coverImage)
                 print("📱 ArticleEditorViewModel: Cover image uploaded successfully with ID: \(coverImageId ?? "none")")
+            } else {
+                print("📱 ArticleEditorViewModel: No cover image to upload")
             }
             
             print("📱 ArticleEditorViewModel: Creating article with title: \(title)")
+            print("📱 ArticleEditorViewModel: Content preview: \(content.prefix(100))...")
+            print("📱 ArticleEditorViewModel: Tags: \(tags)")
+            
             let article = try await appwrite.createArticle(
                 title: title,
                 content: content,
@@ -576,11 +585,21 @@ class ArticleEditorViewModel: ObservableObject {
             )
             
             isLoading = false
-            print("📱 ArticleEditorViewModel: Article created successfully with ID: \(article.id)")
-            print("📱 ArticleEditorViewModel: Article details - userId: \(article.userId), title: \(article.title)")
+            print("✅ ArticleEditorViewModel: Article created successfully")
+            print("📱 ArticleEditorViewModel: Article ID: \(article.id)")
+            print("📱 ArticleEditorViewModel: Article title: \(article.title)")
+            print("📱 ArticleEditorViewModel: Article author: \(article.author)")
+            print("📱 ArticleEditorViewModel: Article userId: \(article.userId)")
+            print("📱 ArticleEditorViewModel: Article creation date: \(article.createdAt)")
             
         } catch {
-            print("📱 ArticleEditorViewModel: Error creating article: \(error.localizedDescription)")
+            print("❌ ArticleEditorViewModel: Error creating article: \(error)")
+            print("❌ ArticleEditorViewModel: Error description: \(error.localizedDescription)")
+            if let appwriteError = error as? AppwriteError {
+                print("❌ ArticleEditorViewModel: Appwrite error type: \(String(describing: appwriteError.type))")
+                print("❌ ArticleEditorViewModel: Appwrite error message: \(String(describing: appwriteError.message))")
+                print("❌ ArticleEditorViewModel: Appwrite error code: \(String(describing: appwriteError.code))")
+            }
             self.error = error.localizedDescription
             isLoading = false
         }

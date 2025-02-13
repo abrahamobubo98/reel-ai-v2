@@ -194,10 +194,10 @@ class QuizViewModel: ObservableObject {
             updatedAt: updatedAt,
             status: .published,
             tags: tags,
-            likes: likes,
             views: views,
             readingTime: 0,
-            commentCount: 0
+            commentCount: 0,
+            likes: likes
         )
         
         logger.info("Successfully loaded article: \(article.title)")

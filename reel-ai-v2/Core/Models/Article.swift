@@ -13,10 +13,10 @@ public struct Article: Codable, Identifiable {
     public let updatedAt: Date
     public let status: ArticleStatus
     public let tags: [String]
-    public let likes: Int
     public let views: Int
     public let readingTime: Int
     public let commentCount: Int
+    public let likes: Int
     
     public enum ArticleStatus: String, Codable {
         case draft
@@ -24,7 +24,7 @@ public struct Article: Codable, Identifiable {
         case archived
     }
     
-    public init(id: String, userId: String, author: String, title: String, content: String, summary: String?, thumbnailUrl: URL?, createdAt: Date, updatedAt: Date, status: ArticleStatus, tags: [String], likes: Int, views: Int, readingTime: Int, commentCount: Int) {
+    public init(id: String, userId: String, author: String, title: String, content: String, summary: String?, thumbnailUrl: URL?, createdAt: Date, updatedAt: Date, status: ArticleStatus, tags: [String], views: Int, readingTime: Int, commentCount: Int, likes: Int) {
         self.id = id
         self.userId = userId
         self.author = author
@@ -36,9 +36,9 @@ public struct Article: Codable, Identifiable {
         self.updatedAt = updatedAt
         self.status = status
         self.tags = tags
-        self.likes = likes
         self.views = views
         self.readingTime = readingTime
         self.commentCount = commentCount
+        self.likes = likes
     }
 } 

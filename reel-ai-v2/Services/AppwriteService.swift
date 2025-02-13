@@ -211,32 +211,46 @@ class AppwriteService {
     /// Creates a new post in the database
     func createPost(mediaId: String, caption: String, mediaType: MediaType = .image, externalLink: String = "") async throws -> Post {
         do {
+            print("📱 Starting post creation process")
             // Get current user
             let user = try await account.get()
+            print("📱 Current user - ID: \(user.id), Name: \(user.name)")
             
             // Create ISO 8601 date string
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             let dateString = formatter.string(from: Date())
             
+            // Prepare document data
+            let documentData: [String: Any] = [
+                "userId": user.id,
+                "author": user.name,
+                "mediaId": mediaId,
+                "mediaType": mediaType.rawValue,
+                "caption": caption,
+                "externalLink": externalLink,
+                "createdAt": dateString,
+                "likes": 0,
+                "comments": 0
+            ]
+            
+            print("📱 Attempting to create post document with data:")
+            print("- userId: \(user.id)")
+            print("- author: \(user.name)")
+            print("- mediaId: \(mediaId)")
+            print("- mediaType: \(mediaType.rawValue)")
+            print("- caption: \(caption)")
+            print("- createdAt: \(dateString)")
+            
             // Create post document with all required fields
             let document = try await databases.createDocument(
                 databaseId: AppwriteService.databaseId,
                 collectionId: Self.postsCollectionId,
                 documentId: ID.unique(),
-                data: [
-                    "userId": user.id,
-                    "author": user.name,
-                    "mediaId": mediaId,
-                    "mediaType": mediaType.rawValue,
-                    "caption": caption,
-                    "externalLink": externalLink,
-                    "createdAt": dateString,
-                    "updatedAt": dateString,
-                    "likes": 0,
-                    "comments": 0
-                ]
+                data: documentData
             )
+            
+            print("✅ Post document created successfully with ID: \(document.id)")
             
             // Create Post object from document data
             let post = Post(
@@ -251,9 +265,15 @@ class AppwriteService {
                 createdAt: formatter.date(from: document.data["createdAt"]?.value as? String ?? dateString) ?? Date()
             )
             
+            print("✅ Post object created successfully")
             return post
             
         } catch let error as AppwriteError {
+            print("❌ Post creation failed with Appwrite error:")
+            print("- Type: \(error.type)")
+            print("- Message: \(error.message)")
+            print("- Code: \(error.code)")
+            
             switch error.type {
             case "user_unauthorized":
                 throw DatabaseError.unauthorized
@@ -261,6 +281,7 @@ class AppwriteService {
                 throw DatabaseError.creationFailed("Appwrite error: \(String(describing: error.message))")
             }
         } catch {
+            print("❌ Post creation failed with error: \(error.localizedDescription)")
             throw DatabaseError.creationFailed(error.localizedDescription)
         }
     }
@@ -270,34 +291,59 @@ class AppwriteService {
     /// Creates a new article in the database
     func createArticle(title: String, content: String, coverImageId: String? = nil, tags: [String] = []) async throws -> Article {
         do {
+            print("📱 AppwriteService: Starting article creation")
+            print("📱 AppwriteService: Title length: \(title.count)")
+            print("📱 AppwriteService: Content length: \(content.count)")
+            print("📱 AppwriteService: Cover image ID: \(coverImageId ?? "none")")
+            print("📱 AppwriteService: Number of tags: \(tags.count)")
+            
             // Get current user
+            print("📱 AppwriteService: Fetching current user")
             let user = try await account.get()
+            print("📱 AppwriteService: Current user - ID: \(user.id), Name: \(user.name)")
             
             // Create ISO 8601 date string
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             let dateString = formatter.string(from: Date())
+            print("📱 AppwriteService: Created date string: \(dateString)")
+            
+            // Prepare document data
+            print("📱 AppwriteService: Preparing document data")
+            let documentData: [String: Any] = [
+                "userId": user.id,
+                "author": user.name,
+                "title": title,
+                "content": content,
+                "coverImageId": coverImageId ?? "",
+                "tags": tags,
+                "createdAt": dateString,
+                "updatedAt": dateString,
+                "likes": 0,
+                "views": 0,
+                "comments": 0
+            ]
+            print("📱 AppwriteService: Document data prepared:")
+            print("- userId: \(user.id)")
+            print("- author: \(user.name)")
+            print("- title: \(title)")
+            print("- content preview: \(content.prefix(100))...")
+            print("- coverImageId: \(coverImageId ?? "none")")
+            print("- tags: \(tags)")
+            print("- createdAt: \(dateString)")
             
             // Create article document
+            print("📱 AppwriteService: Creating article document")
             let document = try await databases.createDocument(
                 databaseId: AppwriteService.databaseId,
                 collectionId: Self.articlesCollectionId,
                 documentId: ID.unique(),
-                data: [
-                    "userId": user.id,
-                    "author": user.name,
-                    "title": title,
-                    "content": content,
-                    "coverImageId": coverImageId ?? "",
-                    "tags": tags,
-                    "createdAt": dateString,
-                    "updatedAt": dateString,
-                    "likes": 0,
-                    "views": 0
-                ]
+                data: documentData
             )
+            print("✅ AppwriteService: Article document created successfully with ID: \(document.id)")
             
             // Create Article object from document data
+            print("📱 AppwriteService: Converting document to Article object")
             let article = Article(
                 id: document.id,
                 userId: document.data["userId"]?.value as? String ?? user.id,
@@ -310,22 +356,37 @@ class AppwriteService {
                 updatedAt: formatter.date(from: document.data["updatedAt"]?.value as? String ?? dateString) ?? Date(),
                 status: .published,
                 tags: document.data["tags"]?.value as? [String] ?? [],
-                likes: document.data["likes"]?.value as? Int ?? 0,
                 views: document.data["views"]?.value as? Int ?? 0,
                 readingTime: 0,
-                commentCount: 0
+                commentCount: 0,
+                likes: document.data["likes"]?.value as? Int ?? 0
             )
+            print("✅ AppwriteService: Article object created successfully")
+            print("📱 AppwriteService: Article details:")
+            print("- ID: \(article.id)")
+            print("- Title: \(article.title)")
+            print("- Author: \(article.author)")
+            print("- UserId: \(article.userId)")
+            print("- Created: \(article.createdAt)")
             
             return article
             
         } catch let error as AppwriteError {
+            print("❌ AppwriteService: Appwrite error creating article:")
+            print("- Type: \(error.type)")
+            print("- Message: \(error.message)")
+            print("- Code: \(error.code)")
+            
             switch error.type {
             case "user_unauthorized":
+                print("❌ AppwriteService: User is unauthorized")
                 throw DatabaseError.unauthorized
             default:
+                print("❌ AppwriteService: Generic Appwrite error")
                 throw DatabaseError.creationFailed("Appwrite error: \(String(describing: error.message))")
             }
         } catch {
+            print("❌ AppwriteService: Unexpected error creating article: \(error.localizedDescription)")
             throw DatabaseError.creationFailed(error.localizedDescription)
         }
     }
@@ -362,10 +423,10 @@ class AppwriteService {
                     updatedAt: formatter.date(from: data["updatedAt"]?.value as? String ?? "") ?? Date(),
                     status: .published,
                     tags: data["tags"]?.value as? [String] ?? [],
-                    likes: data["likes"]?.value as? Int ?? 0,
                     views: data["views"]?.value as? Int ?? 0,
                     readingTime: 0,
-                    commentCount: 0
+                    commentCount: 0,
+                    likes: data["likes"]?.value as? Int ?? 0
                 )
                 
                 articles.append(article)
@@ -410,10 +471,10 @@ class AppwriteService {
                 updatedAt: formatter.date(from: updateDateString) ?? Date(),
                 status: article.status,
                 tags: document.data["tags"]?.value as? [String] ?? article.tags,
-                likes: article.likes,
                 views: article.views,
                 readingTime: article.readingTime,
-                commentCount: article.commentCount
+                commentCount: article.commentCount,
+                likes: article.likes
             )
             
         } catch {
@@ -471,22 +532,46 @@ class AppwriteService {
         from videoURL: URL,
         progress: ((Double) -> Void)? = nil
     ) async throws -> String {
+        print("📱 Starting video upload process from URL: \(videoURL)")
+        
         // Get video file size without loading entire file
-        let resourceValues = try videoURL.resourceValues(forKeys: [.fileSizeKey])
+        let resourceValues = try videoURL.resourceValues(forKeys: [.fileSizeKey, .contentTypeKey])
         guard let fileSize = resourceValues.fileSize else {
+            print("❌ Failed to get video file size")
             throw StorageError.invalidVideo
         }
         
+        print("📱 Video file size: \(fileSize / 1_000_000)MB")
+        
         let videoSizeMB = Double(fileSize) / 1_000_000
         guard videoSizeMB <= Double(Constants.maxVideoSizeMB) else {
+            print("❌ Video size \(videoSizeMB)MB exceeds maximum allowed size of \(Constants.maxVideoSizeMB)MB")
             throw StorageError.sizeTooLarge(size: Int(videoSizeMB))
         }
         
+        // Log content type if available
+        if let contentType = resourceValues.contentType {
+            print("📱 Video content type: \(contentType)")
+        }
+        
+        print("📱 Creating InputFile from video URL path")
         // Create file input using URL instead of loading data into memory
         let file = InputFile.fromPath(videoURL.path)
+        print("📱 InputFile created successfully")
         
         // Upload with retry
-        return try await uploadWithRetry(file: file, progress: progress)
+        do {
+            print("📱 Starting video upload with retry mechanism")
+            let fileId = try await uploadWithRetry(file: file, progress: progress)
+            print("✅ Video upload completed successfully with fileId: \(fileId)")
+            return fileId
+        } catch {
+            print("❌ Video upload failed with error: \(error.localizedDescription)")
+            if let appwriteError = error as? AppwriteError {
+                print("❌ Appwrite specific error details: \(appwriteError)")
+            }
+            throw error
+        }
     }
     
     /// Internal method to handle upload retries
@@ -495,6 +580,7 @@ class AppwriteService {
         progress: ((Double) -> Void)?,
         attempt: Int = 1
     ) async throws -> String {
+        print("📱 Upload attempt #\(attempt)")
         do {
             // Simulate progress updates (since Appwrite SDK doesn't provide native progress)
             if let progress = progress {
@@ -507,11 +593,13 @@ class AppwriteService {
                 }
             }
             
+            print("📱 Creating file in Appwrite storage")
             let result = try await storage.createFile(
                 bucketId: Constants.postMediaBucketId,
                 fileId: ID.unique(),
                 file: file
             )
+            print("✅ File created in storage with ID: \(result.id)")
             
             if let progress = progress {
                 await MainActor.run {
@@ -521,11 +609,14 @@ class AppwriteService {
             return result.id
             
         } catch {
+            print("❌ Upload attempt #\(attempt) failed with error: \(error.localizedDescription)")
             if attempt < Constants.maxRetryAttempts {
                 let delay = UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
+                print("📱 Retrying upload after \(delay/1_000_000_000) seconds...")
                 try await Task.sleep(nanoseconds: delay)
                 return try await uploadWithRetry(file: file, progress: progress, attempt: attempt + 1)
             } else {
+                print("❌ Maximum retry attempts (\(Constants.maxRetryAttempts)) reached. Upload failed.")
                 throw StorageError.uploadFailed(error.localizedDescription)
             }
         }

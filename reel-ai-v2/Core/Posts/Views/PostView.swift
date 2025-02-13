@@ -66,10 +66,6 @@ struct PostView: View {
                 }
             }
             
-            // Caption
-            Text(post.caption)
-                .padding(.horizontal)
-            
             // Metadata
             HStack {
                 Button(action: handleLikeAction) {

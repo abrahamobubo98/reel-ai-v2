@@ -6,6 +6,7 @@ struct SettingsView: View {
     @State private var selectedTab = 0
     @StateObject private var homeViewModel = HomeViewModel()
     @State private var showEditProfile = false
+    @State private var showQuizHistory = false
     
     var body: some View {
         ScrollView {
@@ -78,7 +79,7 @@ struct SettingsView: View {
                     }
                     .padding(.vertical, 8)
                     
-                    Text("Software developer passionate about creating amazing apps and sharing knowledge with others.") // TODO: Replace with actual bio
+                    Text(viewModel.model.bio.isEmpty ? "No bio yet. Click Edit Profile to add one." : viewModel.model.bio)
                         .font(.subheadline)
                         .foregroundColor(.gray)
                         .padding(.horizontal)
@@ -103,17 +104,22 @@ struct SettingsView: View {
                         }
                         
                         Button(action: {
-                            // Share profile functionality will go here
+                            showQuizHistory = true
                         }) {
                             HStack {
-                                Image(systemName: "square.and.arrow.up")
-                                Text("Share Profile")
+                                Image(systemName: "list.bullet.clipboard")
+                                Text("Quiz History")
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                             .background(Color(.systemGray6))
                             .foregroundColor(.primary)
                             .cornerRadius(8)
+                        }
+                        .sheet(isPresented: $showQuizHistory) {
+                            NavigationView {
+                                QuizHistoryView(userId: viewModel.model.userId)
+                            }
                         }
                     }
                     .padding(.horizontal)

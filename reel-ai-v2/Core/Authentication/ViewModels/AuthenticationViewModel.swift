@@ -61,6 +61,7 @@ class AuthenticationViewModel: ObservableObject {
                 // Get user details after login
                 let account = try await appwrite.account.get()
                 name = account.name // Store the name
+                model.userId = account.id // Store the user ID
                 isAuthenticated = true
                 
             case .signUp:
@@ -74,6 +75,22 @@ class AuthenticationViewModel: ObservableObject {
                     // Get user details
                     let account = try await appwrite.account.get()
                     name = account.name // Store the name
+                    model.userId = account.id // Store the user ID
+                    
+                    // Create user document in the users collection
+                    print("📱 Creating user document...")
+                    let _ = try await appwrite.databases.createDocument(
+                        databaseId: AppwriteService.databaseId,
+                        collectionId: AppwriteService.Constants.usersCollectionId,
+                        documentId: model.userId,
+                        data: [
+                            "name": name,
+                            "email": email,
+                            "bio": ""
+                        ]
+                    )
+                    print("📱 User document created successfully")
+                    
                     isAuthenticated = true
                     
                 } catch let error as NSError {
@@ -142,19 +159,56 @@ class AuthenticationViewModel: ObservableObject {
         }
     }
     
-    func updateProfile(name: String) async throws {
+    func updateProfile(name: String, bio: String) async throws {
         isLoading = true
         defer { isLoading = false }
         
         do {
+            print("📱 Starting profile update - Name: \(name), Bio: \(bio)")
+            print("📱 Current userId: \(model.userId)")
+            
+            // Update name
+            print("📱 Updating name...")
             let _ = try await appwrite.account.updateName(name: name)
+            print("📱 Name update successful")
+            
+            // Update bio in the users collection
+            print("📱 Updating bio in database...")
+            do {
+                let _ = try await appwrite.databases.updateDocument(
+                    databaseId: AppwriteService.databaseId,
+                    collectionId: AppwriteService.Constants.usersCollectionId,
+                    documentId: model.userId,
+                    data: [
+                        "bio": bio
+                    ]
+                )
+                print("📱 Bio update successful")
+            } catch {
+                // If document doesn't exist, create it
+                print("📱 Document not found, creating new user document...")
+                let _ = try await appwrite.databases.createDocument(
+                    databaseId: AppwriteService.databaseId,
+                    collectionId: AppwriteService.Constants.usersCollectionId,
+                    documentId: model.userId,
+                    data: [
+                        "name": name,
+                        "email": email,
+                        "bio": bio
+                    ]
+                )
+                print("📱 User document created successfully")
+            }
             
             await MainActor.run {
                 self.name = name
+                self.model.bio = bio
+                print("📱 Local state updated - Name: \(self.name), Bio: \(self.model.bio)")
             }
         } catch {
-            if error is AppwriteError {
-                throw error
+            print("❌ Profile update failed - Error: \(error.localizedDescription)")
+            if let appwriteError = error as? AppwriteError {
+                print("❌ Appwrite specific error: \(appwriteError)")
             }
             throw error
         }

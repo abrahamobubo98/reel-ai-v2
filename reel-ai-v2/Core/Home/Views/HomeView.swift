@@ -129,15 +129,11 @@ struct HomeView: View {
             }
             
             // Search Tab
-            VStack(spacing: 20) {
-                Text("Search")
-                    .font(.largeTitle)
-                    .bold()
-            }
-            .tabItem {
-                Image(systemName: "magnifyingglass")
-                Text("Search")
-            }
+            SearchView()
+                .tabItem {
+                    Image(systemName: "magnifyingglass")
+                    Text("Search")
+                }
             
             // Create Tab
             CreateView()
@@ -148,9 +144,11 @@ struct HomeView: View {
             
             // Notifications Tab
             VStack(spacing: 20) {
-                Text("Notifications")
-                    .font(.largeTitle)
-                    .bold()
+                ContentUnavailableView(
+                    "No Notifications",
+                    systemImage: "bell.slash",
+                    description: Text("You're all caught up! Check back later for updates.")
+                )
             }
             .tabItem {
                 Image(systemName: "bell.fill")

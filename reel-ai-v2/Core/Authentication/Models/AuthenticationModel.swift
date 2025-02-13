@@ -11,6 +11,8 @@ struct AuthenticationModel {
     var password: String = ""
     var confirmPassword: String = ""
     var authState: AuthenticationState = .signIn
+    var userId: String = ""
+    var bio: String = ""
     
     // Validation states
     var isEmailValid: Bool = true
