@@ -41,4 +41,4 @@ injectionforxcode/
 # Config files with sensitive data
 Config.plist
 **/Config.plist
-reel-ai-v2/Config.plist 
+reel-ai-v2/Config.plist Config.plist
